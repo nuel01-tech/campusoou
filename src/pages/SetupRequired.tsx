@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { saveRuntimeConfig, tryLoadServerConfig } from '@/lib/supabase';
+import { isSecretKey, saveRuntimeConfig, tryLoadServerConfig } from '@/lib/supabase';
 import { Alert, Button, PageLoader, TextField } from '@/components/ui';
 
 export function SetupRequired({ onConfigured }: { onConfigured?: () => void }) {
@@ -33,8 +33,14 @@ export function SetupRequired({ onConfigured }: { onConfigured?: () => void }) {
       setError('Enter your Supabase Project URL, e.g. https://abcdefghijklm.supabase.co');
       return;
     }
+    if (isSecretKey(anonKey)) {
+      setError(
+        'That is your Secret key (sb_secret_...). Supabase forbids using secret keys in the browser. Copy the Publishable key (sb_publishable_...) or anon public key instead!',
+      );
+      return;
+    }
     if (anonKey.trim().length < 20) {
-      setError('Paste your Supabase anon / public key (found under Project Settings → API).');
+      setError('Paste your Supabase Publishable / anon public key (found under Project Settings → API Keys).');
       return;
     }
     const ok = saveRuntimeConfig(url, anonKey);

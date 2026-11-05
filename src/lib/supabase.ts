@@ -5,6 +5,10 @@ const STORAGE_ANON_KEY = 'campuspulse_supabase_anon_key';
 
 const env = import.meta.env as Record<string, string | undefined>;
 
+export function isSecretKey(k?: string | null): boolean {
+  return /^sb_secret_/i.test((k ?? '').trim());
+}
+
 function isValidConfig(u?: string | null, k?: string | null): boolean {
   const cleanUrl = (u ?? '').trim();
   const cleanKey = (k ?? '').trim();
@@ -13,8 +17,19 @@ function isValidConfig(u?: string | null, k?: string | null): boolean {
       cleanKey &&
       /^https?:\/\//i.test(cleanUrl) &&
       !cleanUrl.includes('your-project') &&
-      !cleanKey.includes('your-anon-key'),
+      !cleanKey.includes('your-anon-key') &&
+      !isSecretKey(cleanKey),
   );
+}
+
+export function clearSavedConfig(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(STORAGE_URL_KEY);
+    window.localStorage.removeItem(STORAGE_ANON_KEY);
+  } catch {
+    // ignore
+  }
 }
 
 function readInitialConfig(): { url: string; anonKey: string; configured: boolean } {
@@ -35,7 +50,9 @@ function readInitialConfig(): { url: string; anonKey: string; configured: boolea
     try {
       const savedUrl = window.localStorage.getItem(STORAGE_URL_KEY);
       const savedKey = window.localStorage.getItem(STORAGE_ANON_KEY);
-      if (isValidConfig(savedUrl, savedKey)) {
+      if (isSecretKey(savedKey)) {
+        clearSavedConfig();
+      } else if (isValidConfig(savedUrl, savedKey)) {
         return { url: savedUrl!.trim(), anonKey: savedKey!.trim(), configured: true };
       }
     } catch {

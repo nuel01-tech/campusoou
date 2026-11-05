@@ -33,6 +33,8 @@ const MESSAGES: Record<string, string | MessageFor> = {
   NOT_FOUND: 'That record could not be found.',
   DB_NOT_MIGRATED:
     'Database tables are not set up yet. Open your Supabase SQL Editor, paste the contents of supabase/migrations/0001_init.sql, and click Run.',
+  SECRET_KEY_USED:
+    'You pasted the Supabase SECRET key (sb_secret_...), which Supabase blocks in browsers. Please replace VITE_SUPABASE_ANON_KEY with the PUBLISHABLE / anon public key (starts with sb_publishable_... or eyJ...).',
   INVALID_API_KEY:
     'Invalid Supabase URL or anon key. Check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your .env.local or deployment settings.',
 
@@ -125,6 +127,9 @@ export function toAppError(e: unknown): AppError {
       /could not find the (function|table)|relation .* does not exist|schema cache/i.test(raw)
     ) {
       return appError('DB_NOT_MIGRATED');
+    }
+    if (/forbidden use of secret api key/i.test(raw)) {
+      return appError('SECRET_KEY_USED');
     }
     if (/invalid api key|apikey/i.test(raw)) {
       return appError('INVALID_API_KEY');
