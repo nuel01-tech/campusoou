@@ -126,7 +126,7 @@ export async function bootstrapSuperAdmin(fullName: string, email: string, passw
   // If Supabase did not return an active session (e.g. "Confirm email" was toggled on in dashboard),
   // our trigger already set `email_confirmed_at = now()`, so we can sign in immediately.
   if (!data.session) {
-    return signInStaff(cleanEmail, password);
+    return signInStaff(cleanEmail, password, 'super_admin');
   }
 
   let profile = data.user ? await getMyProfile(data.user.id) : null;
