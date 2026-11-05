@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from '@/hooks/useAuth';
 import { ToastProvider } from '@/hooks/useToast';
@@ -25,7 +25,8 @@ const NewSessionPage = lazy(() => import('@/pages/rep/NewSessionPage'));
 const LiveSessionPage = lazy(() => import('@/pages/rep/LiveSessionPage'));
 
 export default function App() {
-  if (!isConfigured) return <SetupRequired />;
+  const [configured, setConfigured] = useState(isConfigured);
+  if (!configured) return <SetupRequired onConfigured={() => setConfigured(true)} />;
 
   return (
     <ErrorBoundary>
