@@ -38,7 +38,7 @@ export default function AdminAuthPage({ initialTab = 'signin' }: { initialTab?: 
     if (isSetup) {
       return bootstrapSuperAdmin(fullName, email, password);
     }
-    return signInStaff(email, password);
+    return signInStaff(email, password, 'super_admin');
   });
 
   if (!ready || adminExists.loading) return <PageLoader />;
