@@ -1,12 +1,18 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+const url = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim();
+const anonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.trim();
 
-export const isConfigured = Boolean(url && anonKey);
+export const isConfigured = Boolean(
+  url &&
+    anonKey &&
+    /^https?:\/\//i.test(url) &&
+    !url.includes('your-project') &&
+    !anonKey.includes('your-anon-key'),
+);
 
-const resolvedUrl = url ?? 'http://localhost:54321';
-const resolvedKey = anonKey ?? 'missing-anon-key';
+const resolvedUrl = isConfigured ? url! : 'http://localhost:54321';
+const resolvedKey = isConfigured ? anonKey! : 'missing-anon-key';
 
 /**
  * Single shared client. When env vars are missing we still create a client

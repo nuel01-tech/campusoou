@@ -1,10 +1,10 @@
 -- =============================================================================
--- Attendance Marker — database schema
+-- CampusPulse — database schema (idempotent: safe to run on a new or existing DB)
 --
--- Run this once in the Supabase SQL editor (or with `supabase db push`).
+-- Run this in the Supabase SQL Editor.
 --
 -- Roles & account model
---   * Super Admin: the first account created during initial setup. Only the
+--   * Super Admin: the master account created during initial setup. Only the
 --     Super Admin can create, suspend, or remove Class Rep accounts.
 --   * Class Rep: created by the Super Admin. Signs in with email + password,
 --     imports student rosters, runs GPS sessions, and exports attendance.
@@ -87,7 +87,7 @@ $$;
 -- Profiles (Super Admin & Class Reps) + Pre-authorized Rep Signups
 -- -----------------------------------------------------------------------------
 
-create table public.profiles (
+create table if not exists public.profiles (
   id          uuid primary key references auth.users (id) on delete cascade,
   email       text not null unique,
   full_name   text not null check (char_length(trim(full_name)) between 2 and 120),
@@ -96,7 +96,7 @@ create table public.profiles (
   created_at  timestamptz not null default now()
 );
 
-create table public.authorized_reps (
+create table if not exists public.authorized_reps (
   email       text primary key,
   full_name   text not null,
   created_by  uuid references auth.users (id) on delete set null,
@@ -184,15 +184,20 @@ begin
 
   if not exists (select 1 from public.profiles where role = 'super_admin') then
     v_name := coalesce(nullif(trim(new.raw_user_meta_data ->> 'full_name'), ''), split_part(v_email, '@', 1));
+    if char_length(v_name) < 2 then
+      v_name := 'Super Admin';
+    end if;
     insert into public.profiles (id, email, full_name, role)
-    values (new.id, v_email, v_name, 'super_admin');
+    values (new.id, v_email, v_name, 'super_admin')
+    on conflict (id) do nothing;
     return new;
   end if;
 
   select * into v_auth from public.authorized_reps where email = v_email;
   if found then
     insert into public.profiles (id, email, full_name, role)
-    values (new.id, v_email, v_auth.full_name, 'rep');
+    values (new.id, v_email, v_auth.full_name, 'rep')
+    on conflict (id) do nothing;
     delete from public.authorized_reps where email = v_email;
   end if;
 
@@ -205,11 +210,41 @@ create trigger on_auth_user_after_created
 after insert on auth.users
 for each row execute function public.handle_after_user_created();
 
+-- Backfill: if an email/password user was created before this migration ran and
+-- no super_admin exists yet, promote that user to super_admin automatically.
+do $$
+declare
+  v_first record;
+begin
+  if not exists (select 1 from public.profiles where role = 'super_admin') then
+    select id, lower(trim(email)) as email, raw_user_meta_data
+      into v_first
+      from auth.users
+     where coalesce(is_anonymous, false) = false
+       and email is not null
+     order by created_at asc
+     limit 1;
+
+    if found then
+      update auth.users set email_confirmed_at = coalesce(email_confirmed_at, now()) where id = v_first.id;
+      insert into public.profiles (id, email, full_name, role)
+      values (
+        v_first.id,
+        v_first.email,
+        coalesce(nullif(trim(v_first.raw_user_meta_data ->> 'full_name'), ''), split_part(v_first.email, '@', 1), 'Super Admin'),
+        'super_admin'
+      )
+      on conflict (id) do update set role = 'super_admin', active = true;
+    end if;
+  end if;
+end;
+$$;
+
 -- -----------------------------------------------------------------------------
 -- Domain Tables
 -- -----------------------------------------------------------------------------
 
-create table public.classes (
+create table if not exists public.classes (
   id              uuid primary key default gen_random_uuid(),
   owner_id        uuid not null default auth.uid() references auth.users (id) on delete cascade,
   name            text not null check (char_length(trim(name)) between 2 and 120),
@@ -217,9 +252,9 @@ create table public.classes (
   semester_start  date,
   created_at      timestamptz not null default now()
 );
-create index classes_owner_idx on public.classes (owner_id);
+create index if not exists classes_owner_idx on public.classes (owner_id);
 
-create table public.students (
+create table if not exists public.students (
   id          uuid primary key default gen_random_uuid(),
   class_id    uuid not null references public.classes (id) on delete cascade,
   full_name   text not null check (char_length(trim(full_name)) between 2 and 160),
@@ -230,9 +265,10 @@ create table public.students (
   created_at  timestamptz not null default now(),
   unique (class_id, matric_no)
 );
-create index students_class_idx on public.students (class_id);
+alter table public.students add column if not exists suspended boolean not null default false;
+create index if not exists students_class_idx on public.students (class_id);
 
-create table public.sessions (
+create table if not exists public.sessions (
   id           uuid primary key default gen_random_uuid(),
   class_id     uuid not null references public.classes (id) on delete cascade,
   course_code  text not null check (char_length(trim(course_code)) between 2 and 20),
@@ -246,9 +282,9 @@ create table public.sessions (
   created_at   timestamptz not null default now(),
   check (ends_at > starts_at)
 );
-create index sessions_class_idx on public.sessions (class_id, starts_at desc);
+create index if not exists sessions_class_idx on public.sessions (class_id, starts_at desc);
 
-create table public.attendance (
+create table if not exists public.attendance (
   id             uuid primary key default gen_random_uuid(),
   session_id     uuid not null references public.sessions (id) on delete cascade,
   student_id     uuid not null references public.students (id) on delete cascade,
@@ -258,7 +294,7 @@ create table public.attendance (
   manual         boolean not null default false,
   unique (session_id, student_id)
 );
-create index attendance_student_idx on public.attendance (student_id);
+create index if not exists attendance_student_idx on public.attendance (student_id);
 
 -- Keep stored values normalised regardless of how the client sends them.
 create or replace function public.students_normalize()
@@ -272,6 +308,7 @@ begin
 end;
 $$;
 
+drop trigger if exists students_normalize_trg on public.students;
 create trigger students_normalize_trg
 before insert or update of matric_no, full_name on public.students
 for each row execute function public.students_normalize();
@@ -287,6 +324,7 @@ begin
 end;
 $$;
 
+drop trigger if exists sessions_normalize_trg on public.sessions;
 create trigger sessions_normalize_trg
 before insert or update of course_code, venue on public.sessions
 for each row execute function public.sessions_normalize();
@@ -328,59 +366,71 @@ alter table public.sessions        enable row level security;
 alter table public.attendance      enable row level security;
 
 -- profiles
+drop policy if exists profiles_self_or_admin_read on public.profiles;
 create policy profiles_self_or_admin_read on public.profiles
   for select to authenticated
   using (id = auth.uid() or public.is_super_admin());
 
 -- authorized_reps
+drop policy if exists authorized_reps_admin_all on public.authorized_reps;
 create policy authorized_reps_admin_all on public.authorized_reps
   for all to authenticated
   using (public.is_super_admin())
   with check (public.is_super_admin());
 
 -- classes
+drop policy if exists classes_owner_all on public.classes;
 create policy classes_owner_all on public.classes
   for all to authenticated
   using (owner_id = auth.uid() and public.is_active_rep())
   with check (owner_id = auth.uid() and public.is_active_rep());
 
+drop policy if exists classes_student_read on public.classes;
 create policy classes_student_read on public.classes
   for select to authenticated
   using (id = public.my_student_class_id());
 
 -- students
+drop policy if exists students_owner_all on public.students;
 create policy students_owner_all on public.students
   for all to authenticated
   using (public.is_class_owner(class_id))
   with check (public.is_class_owner(class_id));
 
+drop policy if exists students_self_read on public.students;
 create policy students_self_read on public.students
   for select to authenticated
   using (user_id = auth.uid());
 
 -- sessions
+drop policy if exists sessions_owner_all on public.sessions;
 create policy sessions_owner_all on public.sessions
   for all to authenticated
   using (public.is_class_owner(class_id))
   with check (public.is_class_owner(class_id));
 
+drop policy if exists sessions_student_read on public.sessions;
 create policy sessions_student_read on public.sessions
   for select to authenticated
   using (class_id = public.my_student_class_id());
 
 -- attendance (students never write directly; see check_in())
+drop policy if exists attendance_owner_read on public.attendance;
 create policy attendance_owner_read on public.attendance
   for select to authenticated
   using (exists (select 1 from sessions s where s.id = session_id and public.is_class_owner(s.class_id)));
 
+drop policy if exists attendance_owner_insert on public.attendance;
 create policy attendance_owner_insert on public.attendance
   for insert to authenticated
   with check (exists (select 1 from sessions s where s.id = session_id and public.is_class_owner(s.class_id)));
 
+drop policy if exists attendance_owner_delete on public.attendance;
 create policy attendance_owner_delete on public.attendance
   for delete to authenticated
   using (exists (select 1 from sessions s where s.id = session_id and public.is_class_owner(s.class_id)));
 
+drop policy if exists attendance_self_read on public.attendance;
 create policy attendance_self_read on public.attendance
   for select to authenticated
   using (exists (select 1 from students st where st.id = student_id and st.user_id = auth.uid()));
@@ -397,6 +447,52 @@ security definer
 set search_path = public
 as $$
   select exists (select 1 from profiles where role = 'super_admin');
+$$;
+
+-- If no super_admin exists in profiles yet, promotes the currently signed-in
+-- non-anonymous user to super_admin. Safe recovery if a user was created before
+-- the trigger existed.
+create or replace function public.ensure_first_super_admin(p_full_name text default null)
+returns public.profiles
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  v_uid   uuid := auth.uid();
+  v_email text;
+  v_name  text;
+  v_row   public.profiles;
+begin
+  if v_uid is null then
+    raise exception 'NOT_AUTHENTICATED';
+  end if;
+
+  select * into v_row from public.profiles where id = v_uid;
+  if found then
+    return v_row;
+  end if;
+
+  if exists (select 1 from public.profiles where role = 'super_admin') then
+    raise exception 'SIGNUP_NOT_ALLOWED';
+  end if;
+
+  select lower(trim(email)) into v_email from auth.users where id = v_uid and coalesce(is_anonymous, false) = false;
+  if v_email is null then
+    raise exception 'NOT_AUTHENTICATED';
+  end if;
+
+  v_name := coalesce(nullif(trim(p_full_name), ''), split_part(v_email, '@', 1), 'Super Admin');
+  if char_length(v_name) < 2 then
+    v_name := 'Super Admin';
+  end if;
+
+  insert into public.profiles (id, email, full_name, role, active)
+  values (v_uid, v_email, v_name, 'super_admin', true)
+  returning * into v_row;
+
+  return v_row;
+end;
 $$;
 
 create or replace function public.pre_authorize_rep(p_email text, p_full_name text)
@@ -692,6 +788,7 @@ revoke all on function public.delete_rep(uuid) from public, anon;
 
 grant execute on function public.ping() to anon, authenticated;
 grant execute on function public.has_super_admin() to anon, authenticated;
+grant execute on function public.ensure_first_super_admin(text) to authenticated;
 grant execute on function public.get_class_by_code(text) to anon, authenticated;
 grant execute on function public.claim_student(text, text, text) to authenticated;
 grant execute on function public.check_in(uuid, float8, float8, float8) to authenticated;

@@ -20,7 +20,7 @@ export function ShareClass({ code }: { code: string }) {
 
   const share = async () => {
     try {
-      await navigator.share({ title: 'Join class on Roll Call', text: `Class code: ${code}`, url: link });
+      await navigator.share({ title: 'Join class on CampusPulse', text: `Class code: ${code}`, url: link });
     } catch (e) {
       if ((e as Error).name !== 'AbortError') void copy();
     }

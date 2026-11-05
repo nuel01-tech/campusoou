@@ -71,7 +71,7 @@ export default function AdminPage() {
   };
 
   const copyCredentials = async (c: CreatedCredentials) => {
-    const text = `Roll Call — Class Rep Login\nLink: ${window.location.origin}/rep/login\nEmail: ${c.email}\nPassword: ${c.password}`;
+    const text = `CampusPulse — Class Rep Login\nLink: ${window.location.origin}/rep/login\nEmail: ${c.email}\nPassword: ${c.password}`;
     try {
       await navigator.clipboard.writeText(text);
       toast('Login details copied to clipboard');

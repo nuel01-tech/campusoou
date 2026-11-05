@@ -18,7 +18,7 @@ export function RequireSuperAdmin() {
   if (!ready) return <PageLoader />;
   if (role === 'rep') return <Navigate to="/rep" replace />;
   if (role !== 'super_admin') {
-    return <Navigate to="/rep/login" replace state={{ from: location.pathname }} />;
+    return <Navigate to="/admin/login" replace state={{ from: location.pathname }} />;
   }
   return <Outlet />;
 }

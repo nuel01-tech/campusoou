@@ -23,13 +23,18 @@ type MessageFor = (detail?: string) => string;
 
 const MESSAGES: Record<string, string | MessageFor> = {
   // Accounts & Super Admin
-  SIGNUP_NOT_ALLOWED: 'Only the Super Admin can create class rep accounts.',
+  SIGNUP_NOT_ALLOWED:
+    'A Super Admin account already exists, so self-registration is locked. Sign in with your existing account, or ask the Super Admin to create a Class Rep account for you.',
   REP_EXISTS: 'A class rep with that email already exists.',
   ACCOUNT_SUSPENDED: 'Your class rep account has been suspended. Contact the Super Admin.',
   STUDENT_SUSPENDED: 'Your account has been suspended by your class rep.',
   INVALID_EMAIL: 'Enter a valid email address.',
   INVALID_NAME: 'Enter the class rep’s full name.',
   NOT_FOUND: 'That record could not be found.',
+  DB_NOT_MIGRATED:
+    'Database tables are not set up yet. Open your Supabase SQL Editor, paste the contents of supabase/migrations/0001_init.sql, and click Run.',
+  INVALID_API_KEY:
+    'Invalid Supabase URL or anon key. Check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your .env.local or deployment settings.',
 
   // Claiming
   CLASS_NOT_FOUND: 'This class link is not valid. Ask your class rep for the correct link.',
@@ -66,7 +71,7 @@ const MESSAGES: Record<string, string | MessageFor> = {
 
   // General
   NOT_AUTHENTICATED: 'Your session has expired. Please sign in again.',
-  NETWORK: 'No connection. Check your internet and try again.',
+  NETWORK: 'No connection to Supabase. Check your internet and verify VITE_SUPABASE_URL is correct.',
   DUPLICATE: 'That record already exists.',
   PERMISSION: 'You do not have permission to do that.',
   CONFIG: 'The app is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.',
@@ -109,7 +114,21 @@ export function toAppError(e: unknown): AppError {
     if (/^[A-Z_]+$/.test(raw) && raw in MESSAGES) {
       return appError(raw, e.details ?? undefined);
     }
-    if (raw.includes('SIGNUP_NOT_ALLOWED')) return appError('SIGNUP_NOT_ALLOWED');
+    if (/SIGNUP_NOT_ALLOWED|Database error saving new user/i.test(raw)) {
+      return appError('SIGNUP_NOT_ALLOWED');
+    }
+    if (
+      e.code === 'PGRST202' ||
+      e.code === 'PGRST205' ||
+      e.code === '42P01' ||
+      e.code === '42883' ||
+      /could not find the (function|table)|relation .* does not exist|schema cache/i.test(raw)
+    ) {
+      return appError('DB_NOT_MIGRATED');
+    }
+    if (/invalid api key|apikey/i.test(raw)) {
+      return appError('INVALID_API_KEY');
+    }
 
     if (e.code === '23505') return appError('DUPLICATE');
     if (e.code === '42501' || e.status === 403) return appError('PERMISSION');
@@ -123,7 +142,7 @@ export function toAppError(e: unknown): AppError {
 
     if (raw) {
       console.error('[unmapped error]', e);
-      return new AppError('UNKNOWN', messageFor('UNKNOWN'), raw);
+      return new AppError('UNKNOWN', raw, raw);
     }
   }
 

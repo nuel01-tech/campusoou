@@ -30,7 +30,7 @@ export async function authenticateWithPasskey(
       publicKey: {
         challenge,
         rp: {
-          name: 'Roll Call Attendance',
+          name: 'CampusPulse Attendance',
           id: window.location.hostname,
         },
         user: {
