@@ -29,7 +29,11 @@ export async function hasSuperAdmin(): Promise<boolean> {
   return Boolean(data);
 }
 
-export async function signInStaff(email: string, password: string): Promise<Profile> {
+export async function signInStaff(
+  email: string,
+  password: string,
+  expectedRole: 'super_admin' | 'rep' = 'rep',
+): Promise<Profile> {
   const cleanEmail = email.trim().toLowerCase();
   const { data, error } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
   if (error) {
@@ -43,7 +47,9 @@ export async function signInStaff(email: string, password: string): Promise<Prof
       }
       throw new AppError(
         'AUTH',
-        'Incorrect email or password. Class Reps must use the email and password created for them by the Super Admin.',
+        expectedRole === 'super_admin'
+          ? 'Super Admin sign-in failed. Check the Super Admin email address and password. If this database already has a Super Admin, first-time setup is locked; recover that existing account rather than creating another one.'
+          : 'Incorrect email or password. Class Reps must use the email and password created for them by the Super Admin.',
       );
     }
     if (/email not confirmed/i.test(error.message)) {
@@ -66,7 +72,16 @@ export async function signInStaff(email: string, password: string): Promise<Prof
     await supabase.auth.signOut();
     throw new AppError(
       'AUTH',
-      'This account does not have a Class Rep or Super Admin profile. Ask the Super Admin to create your Class Rep account.',
+      expectedRole === 'super_admin'
+        ? 'This login does not have a Super Admin profile. Use the email belonging to the existing Super Admin account.'
+        : 'This account does not have a Class Rep or Super Admin profile. Ask the Super Admin to create your Class Rep account.',
+    );
+  }
+  if (expectedRole === 'super_admin' && profile.role !== 'super_admin') {
+    await supabase.auth.signOut();
+    throw new AppError(
+      'AUTH',
+      'This is a Class Rep account, not the Super Admin account. Open the Class Rep sign-in page instead.',
     );
   }
   if (!profile.active) {
@@ -103,7 +118,7 @@ export async function bootstrapSuperAdmin(fullName: string, email: string, passw
     }
     if (/already registered/i.test(error.message)) {
       // If the user already registered in auth.users, try signing them in and ensuring their profile.
-      return signInStaff(cleanEmail, password);
+      return signInStaff(cleanEmail, password, 'super_admin');
     }
     throw toAppError(error);
   }
