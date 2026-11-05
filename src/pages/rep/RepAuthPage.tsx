@@ -21,7 +21,7 @@ export default function RepAuthPage() {
   const [password, setPassword] = useState('');
   const [touched, setTouched] = useState(false);
 
-  const action = useAction(async () => signInStaff(email, password));
+  const action = useAction(async () => signInStaff(email, password, 'rep'));
 
   if (!ready || adminExists.loading) return <PageLoader />;
   if (role === 'super_admin') return <Navigate to={from ?? '/admin'} replace />;
