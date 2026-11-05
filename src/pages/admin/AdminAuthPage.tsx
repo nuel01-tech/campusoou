@@ -175,6 +175,11 @@ export default function AdminAuthPage({ initialTab = 'signin' }: { initialTab?: 
         <Button type="submit" size="lg" block loading={action.pending}>
           {isSetup ? 'Create Super Admin Account' : 'Sign in to Admin Dashboard'}
         </Button>
+        {!isSetup && (
+          <p className="fine-print center">
+            <Link to="/admin/forgot-password">Forgot your Super Admin password?</Link>
+          </p>
+        )}
       </form>
 
       <div className="auth-switch-box">
