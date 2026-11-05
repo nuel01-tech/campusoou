@@ -18,6 +18,7 @@ import { StudentHome } from '@/pages/student/StudentHome';
 // Staff pages are split out; students never download them.
 const RepAuthPage = lazy(() => import('@/pages/rep/RepAuthPage'));
 const AdminAuthPage = lazy(() => import('@/pages/admin/AdminAuthPage'));
+const AdminPasswordRecoveryPage = lazy(() => import('@/pages/admin/AdminPasswordRecoveryPage'));
 const AdminPage = lazy(() => import('@/pages/admin/AdminPage'));
 const ClassesPage = lazy(() => import('@/pages/rep/ClassesPage'));
 const ClassPage = lazy(() => import('@/pages/rep/ClassPage'));
@@ -45,6 +46,8 @@ export default function App() {
                   <Route path="/rep/signup" element={<Navigate to="/rep/login" replace />} />
 
                   <Route path="/admin/login" element={<AdminAuthPage initialTab="signin" />} />
+                  <Route path="/admin/forgot-password" element={<AdminPasswordRecoveryPage mode="request" />} />
+                  <Route path="/admin/reset-password" element={<AdminPasswordRecoveryPage mode="reset" />} />
                   <Route path="/admin/setup" element={<AdminAuthPage initialTab="setup" />} />
 
                   <Route element={<RequireSuperAdmin />}>
