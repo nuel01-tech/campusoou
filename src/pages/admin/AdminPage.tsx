@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { useAction, useAsync } from '@/hooks/useAsync';
+import { useAction, useAsync, usePolling } from '@/hooks/useAsync';
 import { useToast } from '@/hooks/useToast';
+import { supabase } from '@/services/db';
+import { listLiveCampusSessions, type LiveCampusSession } from '@/services/sessions';
 import {
   createDepartment,
   createRepAccount,
@@ -25,12 +27,12 @@ import {
 } from '@/components/ui';
 import { KpiStatGrid, VerticalTabs, type VerticalTabItem } from '@/components/saas';
 import { toAppError } from '@/lib/errors';
-import { formatDate, pluralize } from '@/lib/format';
+import { formatDate, formatTime, pluralize } from '@/lib/format';
 import { ACADEMIC_LEVELS, type Department, type RepSummary } from '@/types';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-type AdminTabKey = 'overview' | 'reps' | 'create' | 'departments';
+type AdminTabKey = 'overview' | 'live-sessions' | 'defaulters' | 'reps' | 'create' | 'departments' | 'audit';
 
 interface CreatedCredentials {
   full_name: string;
@@ -50,6 +52,7 @@ function generatePassword(): string {
 export default function AdminPage() {
   const reps = useAsync(listReps, []);
   const departments = useAsync(listDepartments, []);
+  const liveSessions = useAsync(listLiveCampusSessions, []);
   const toast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const [created, setCreated] = useState<CreatedCredentials | null>(null);
@@ -61,9 +64,11 @@ export default function AdminPage() {
 
   const rawTab = searchParams.get('tab') as AdminTabKey | null;
   const activeTab: AdminTabKey =
-    rawTab && ['overview', 'reps', 'create', 'departments'].includes(rawTab)
+    rawTab && ['overview', 'live-sessions', 'defaulters', 'reps', 'create', 'departments', 'audit'].includes(rawTab)
       ? rawTab
       : 'overview';
+
+  usePolling(() => void liveSessions.reload({ silent: true }), 10_000, activeTab === 'live-sessions');
 
   const setTab = (tab: AdminTabKey) => {
     setSearchParams({ tab });
@@ -71,6 +76,7 @@ export default function AdminPage() {
 
   const list = reps.data ?? [];
   const deptList = departments.data ?? [];
+  const liveList = liveSessions.data ?? [];
 
   const filteredReps = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -99,6 +105,17 @@ export default function AdminPage() {
       description: 'KPI metrics & department summary',
     },
     {
+      key: 'live-sessions',
+      label: 'Live Campus Sessions',
+      description: 'Real-time active lecture roll-calls',
+      badge: liveList.length > 0 ? `${liveList.length} Live` : undefined,
+    },
+    {
+      key: 'defaulters',
+      label: 'Defaulters Watchlist',
+      description: 'Students below 75% NUC benchmark',
+    },
+    {
       key: 'reps',
       label: 'Class Rep Directory',
       description: 'Search, filter & manage reps',
@@ -115,6 +132,11 @@ export default function AdminPage() {
       label: 'Departments Manager',
       description: 'Add or remove departments',
       badge: deptList.length,
+    },
+    {
+      key: 'audit',
+      label: 'Anti-Proxy & Device Audit',
+      description: 'Biometric passkeys & device bindings',
     },
   ];
 
@@ -545,6 +567,22 @@ export default function AdminPage() {
             />
           )}
 
+          {activeTab === 'live-sessions' && (
+            <AdminLiveSessionsPanel
+              sessions={liveList}
+              loading={liveSessions.loading}
+              onRefresh={() => void liveSessions.reload()}
+            />
+          )}
+
+          {activeTab === 'defaulters' && (
+            <AdminDefaultersPanel departments={deptList} />
+          )}
+
+          {activeTab === 'audit' && (
+            <AdminAuditPanel />
+          )}
+
           {activeTab === 'departments' && (
             <DepartmentsPanel
               departments={deptList}
@@ -862,5 +900,326 @@ function NewRepForm({
         )}
       </div>
     </form>
+  );
+}
+
+function AdminLiveSessionsPanel({
+  sessions,
+  loading,
+  onRefresh,
+}: {
+  sessions: LiveCampusSession[];
+  loading: boolean;
+  onRefresh: () => void;
+}) {
+  return (
+    <section className="panel stack">
+      <div className="section-head">
+        <div>
+          <h2>Campus Live Sessions Monitor</h2>
+          <p className="muted small">
+            Real-time feed of all ongoing lecture roll-calls across university departments.
+          </p>
+        </div>
+        <div className="row">
+          <Button size="sm" variant="secondary" onClick={onRefresh} loading={loading}>
+            Refresh
+          </Button>
+          <Link to="/rep" className="btn btn-primary btn-sm">
+            <span>+ Start a session</span>
+          </Link>
+        </div>
+      </div>
+
+      {sessions.length === 0 ? (
+        <EmptyState
+          title="No live sessions running right now"
+          action={
+            <Link to="/rep" className="btn btn-secondary btn-sm">
+              <span>View all classes</span>
+            </Link>
+          }
+        >
+          When Class Representatives start a GPS attendance session for their cohort, it will appear here in real time.
+        </EmptyState>
+      ) : (
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Course</th>
+                <th>Class Cohort</th>
+                <th>Department & Level</th>
+                <th>Venue</th>
+                <th className="num">Present</th>
+                <th>Started</th>
+                <th className="actions-col">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sessions.map((s) => (
+                <tr key={s.id}>
+                  <td>
+                    <strong>{s.course_code}</strong>
+                  </td>
+                  <td>{s.class_name}</td>
+                  <td>
+                    <div className="row" style={{ gap: '0.35rem' }}>
+                      {s.department_name && <Badge tone="neutral">{s.department_name}</Badge>}
+                      {s.level && <Badge tone="ok">{s.level}</Badge>}
+                    </div>
+                  </td>
+                  <td>{s.venue} ({s.radius_m}m)</td>
+                  <td className="num">
+                    <Badge tone="live">{s.present_count} Present</Badge>
+                  </td>
+                  <td className="nowrap muted">{formatTime(s.starts_at)}</td>
+                  <td className="actions-col">
+                    <Link to={`/rep/session/${s.id}`} className="btn btn-secondary btn-sm">
+                      <span>Open live roll-call →</span>
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function AdminDefaultersPanel({ departments }: { departments: Department[] }) {
+  const [query, setQuery] = useState('');
+  const [deptFilter, setDeptFilter] = useState('');
+
+  const defaultersQuery = useAsync(async () => {
+    const { data: students } = await supabase
+      .from('students')
+      .select('id, full_name, matric_no, class_id, classes(id, name, level, department_id, departments(name))')
+      .order('full_name');
+
+    if (!students || students.length === 0) return [];
+
+    const { data: attendanceRows } = await supabase
+      .from('attendance')
+      .select('student_id, session_id');
+
+    const counts = new Map<string, number>();
+    for (const a of attendanceRows ?? []) {
+      counts.set(a.student_id, (counts.get(a.student_id) ?? 0) + 1);
+    }
+
+    return students.map((st: any) => {
+      const attended = counts.get(st.id) ?? 0;
+      return {
+        id: st.id,
+        full_name: st.full_name,
+        matric_no: st.matric_no,
+        class_name: st.classes?.name ?? 'Class',
+        department_name: st.classes?.departments?.name ?? 'General',
+        department_id: st.classes?.department_id,
+        level: st.classes?.level,
+        attended,
+      };
+    });
+  }, []);
+
+  const list = defaultersQuery.data ?? [];
+  const filtered = list.filter((st) => {
+    if (deptFilter && st.department_id !== deptFilter) return false;
+    if (!query) return true;
+    const q = query.toLowerCase();
+    return st.full_name.toLowerCase().includes(q) || st.matric_no.toLowerCase().includes(q);
+  });
+
+  const shareWhatsAppWarning = (st: (typeof list)[0]) => {
+    const text = [
+      `*OFFICIAL UNIVERSITY ATTENDANCE WARNING*`,
+      `Student: ${st.full_name} (${st.matric_no})`,
+      `Class: ${st.class_name} · ${st.department_name}`,
+      `Total Sessions Attended: ${st.attended}`,
+      `\n*Notice:* Your attendance record is currently below the mandatory 75% NUC exam eligibility threshold. You risk being debarred from sitting semester examinations. Please report to your Class Representative immediately.`,
+    ].join('\n');
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+  };
+
+  return (
+    <section className="panel stack">
+      <div className="section-head">
+        <div>
+          <h2>University Defaulters & Exam Eligibility Watchlist</h2>
+          <p className="muted small">
+            Identify students at risk of disqualification under the 75% NUC attendance rule.
+          </p>
+        </div>
+      </div>
+
+      <div className="filter-bar">
+        <TextField
+          label="Search student"
+          placeholder="Name or matric number…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <SelectField
+          label="Department"
+          value={deptFilter}
+          onChange={(e) => setDeptFilter(e.target.value)}
+        >
+          <option value="">All departments</option>
+          {departments.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.name}
+            </option>
+          ))}
+        </SelectField>
+      </div>
+
+      {defaultersQuery.loading ? (
+        <PageLoader />
+      ) : filtered.length === 0 ? (
+        <p className="muted small">No students found.</p>
+      ) : (
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Student</th>
+                <th>Matric No</th>
+                <th>Class Cohort</th>
+                <th>Department</th>
+                <th className="num">Attended</th>
+                <th>Status</th>
+                <th className="actions-col">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.slice(0, 100).map((st) => (
+                <tr key={st.id}>
+                  <td>
+                    <strong>{st.full_name}</strong>
+                  </td>
+                  <td className="mono">{st.matric_no}</td>
+                  <td>{st.class_name}</td>
+                  <td>{st.department_name}</td>
+                  <td className="num">{st.attended}</td>
+                  <td>
+                    <Badge tone={st.attended > 3 ? 'ok' : 'muted'}>
+                      {st.attended > 3 ? 'Monitoring' : 'At-Risk Defaulter'}
+                    </Badge>
+                  </td>
+                  <td className="actions-col">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => shareWhatsAppWarning(st)}
+                    >
+                      WhatsApp Notice
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function AdminAuditPanel() {
+  const [query, setQuery] = useState('');
+
+  const auditQuery = useAsync(async () => {
+    const { data } = await supabase
+      .from('students')
+      .select('id, full_name, matric_no, user_id, passkey_id, device_token, claimed_at, suspended, created_at, classes(name, departments(name))')
+      .order('claimed_at', { ascending: false, nullsFirst: false })
+      .limit(200);
+    return data ?? [];
+  }, []);
+
+  const list = auditQuery.data ?? [];
+  const filtered = list.filter((st: any) => {
+    if (!query) return true;
+    const q = query.toLowerCase();
+    return st.full_name.toLowerCase().includes(q) || st.matric_no.toLowerCase().includes(q);
+  });
+
+  return (
+    <section className="panel stack">
+      <div className="section-head">
+        <div>
+          <h2>Anti-Proxy & Hardware Passkey Device Audit</h2>
+          <p className="muted small">
+            Verify biometric WebAuthn credentials, 1-phone hardware bindings, and phone claim security records.
+          </p>
+        </div>
+        <Button size="sm" variant="secondary" onClick={() => void auditQuery.reload()}>
+          Refresh audit logs
+        </Button>
+      </div>
+
+      <TextField
+        label="Search student audit log"
+        placeholder="Filter by name or matric number…"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
+
+      {auditQuery.loading ? (
+        <PageLoader />
+      ) : (
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Student</th>
+                <th>Matric No</th>
+                <th>Class</th>
+                <th>Hardware Passkey</th>
+                <th>Device Token</th>
+                <th>Claim Date</th>
+                <th>Security Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((st: any) => (
+                <tr key={st.id}>
+                  <td>
+                    <strong>{st.full_name}</strong>
+                  </td>
+                  <td className="mono">{st.matric_no}</td>
+                  <td>{st.classes?.name ?? 'Class'}</td>
+                  <td>
+                    {st.passkey_id ? (
+                      <Badge tone="ok">Passkey Bound</Badge>
+                    ) : (
+                      <Badge tone="muted">Unbound</Badge>
+                    )}
+                  </td>
+                  <td className="mono" style={{ fontSize: '0.75rem' }}>
+                    {st.device_token ? `${st.device_token.slice(0, 10)}…` : '—'}
+                  </td>
+                  <td className="muted nowrap">
+                    {st.claimed_at ? formatDate(st.claimed_at) : 'Unclaimed'}
+                  </td>
+                  <td>
+                    {st.suspended ? (
+                      <Badge tone="muted">Suspended</Badge>
+                    ) : st.user_id ? (
+                      <Badge tone="ok">Active & Verified</Badge>
+                    ) : (
+                      <Badge tone="neutral">Pending Claim</Badge>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }

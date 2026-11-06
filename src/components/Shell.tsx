@@ -3,9 +3,11 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-do
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
 import { signOut } from '@/services/auth';
+import { listClasses } from '@/services/classes';
 import { toAppError } from '@/lib/errors';
 import { Badge } from './ui';
 import { CommandPalette, type CommandItem } from './saas';
+import type { ClassRoom } from '@/types';
 
 interface NavEntry {
   id: string;
@@ -13,7 +15,10 @@ interface NavEntry {
   to: string;
   match: (pathname: string, searchParams: URLSearchParams) => boolean;
   badge?: string;
+  icon?: string;
 }
+
+const ACTIVE_CLASS_KEY = 'campuspulse_active_class_id';
 
 export function Shell({ children }: { children: ReactNode }) {
   const { role, profile, user } = useAuth();
@@ -23,6 +28,16 @@ export function Shell({ children }: { children: ReactNode }) {
   const toast = useToast();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
+  const [userClasses, setUserClasses] = useState<ClassRoom[]>([]);
+
+  // Load user's classes when staff is signed in
+  useEffect(() => {
+    if (role === 'rep' || role === 'super_admin') {
+      listClasses()
+        .then((cls) => setUserClasses(cls))
+        .catch(() => {});
+    }
+  }, [role, location.pathname]);
 
   // Close mobile sidebar on route change
   useEffect(() => {
@@ -64,18 +79,58 @@ export function Shell({ children }: { children: ReactNode }) {
 
   const showSaasSidebar = Boolean(role) && !onPublicOrAuthPage;
 
-  // Extract current classId if viewing a specific class
+  // Extract or remember active classId
   const classMatch = /^\/rep\/class\/([^/]+)/.exec(location.pathname);
-  const activeClassId = classMatch ? classMatch[1] : null;
+  const urlClassId = classMatch ? classMatch[1] : null;
+
+  useEffect(() => {
+    if (urlClassId) {
+      try {
+        localStorage.setItem(ACTIVE_CLASS_KEY, urlClassId);
+      } catch {}
+    }
+  }, [urlClassId]);
+
+  const activeClassId = useMemo(() => {
+    if (urlClassId) return urlClassId;
+    try {
+      const stored = localStorage.getItem(ACTIVE_CLASS_KEY);
+      if (stored && userClasses.some((c) => c.id === stored)) return stored;
+    } catch {}
+    return userClasses[0]?.id ?? null;
+  }, [urlClassId, userClasses]);
+
+  const activeClass = userClasses.find((c) => c.id === activeClassId);
+
+  const handleSwitchClass = (id: string) => {
+    try {
+      localStorage.setItem(ACTIVE_CLASS_KEY, id);
+    } catch {}
+    setMobileMenuOpen(false);
+    navigate(`/rep/class/${id}`);
+  };
 
   const primaryNav = useMemo<NavEntry[]>(() => {
     if (role === 'super_admin') {
       return [
         {
           id: 'admin-overview',
-          label: 'Overview & KPIs',
+          label: 'Executive Overview',
           to: '/admin?tab=overview',
           match: (p, sp) => p === '/admin' && (!sp.get('tab') || sp.get('tab') === 'overview'),
+        },
+        {
+          id: 'admin-live',
+          label: 'Live Campus Sessions',
+          to: '/admin?tab=live-sessions',
+          match: (p, sp) => p === '/admin' && sp.get('tab') === 'live-sessions',
+          badge: 'Live',
+        },
+        {
+          id: 'admin-defaulters',
+          label: 'Defaulters Watchlist (<75%)',
+          to: '/admin?tab=defaulters',
+          match: (p, sp) => p === '/admin' && sp.get('tab') === 'defaulters',
         },
         {
           id: 'admin-reps',
@@ -88,11 +143,11 @@ export function Shell({ children }: { children: ReactNode }) {
           label: 'Provision Class Rep',
           to: '/admin?tab=create',
           match: (p, sp) => p === '/admin' && sp.get('tab') === 'create',
-          badge: 'New',
+          badge: '+',
         },
         {
           id: 'admin-depts',
-          label: 'Departments',
+          label: 'Departments Manager',
           to: '/admin?tab=departments',
           match: (p, sp) => p === '/admin' && sp.get('tab') === 'departments',
         },
@@ -102,6 +157,12 @@ export function Shell({ children }: { children: ReactNode }) {
           to: '/rep',
           match: (p) => p.startsWith('/rep'),
         },
+        {
+          id: 'admin-audit',
+          label: 'Anti-Proxy & Device Audit',
+          to: '/admin?tab=audit',
+          match: (p, sp) => p === '/admin' && sp.get('tab') === 'audit',
+        },
       ];
     }
 
@@ -109,7 +170,7 @@ export function Shell({ children }: { children: ReactNode }) {
       return [
         {
           id: 'rep-classes',
-          label: 'All Classes',
+          label: 'All Classes / Cohorts',
           to: '/rep?tab=directory',
           match: (p, sp) => p === '/rep' && (!sp.get('tab') || sp.get('tab') === 'directory'),
         },
@@ -119,6 +180,18 @@ export function Shell({ children }: { children: ReactNode }) {
           to: '/rep?tab=create',
           match: (p, sp) => p === '/rep' && sp.get('tab') === 'create',
           badge: '+',
+        },
+        {
+          id: 'rep-defaulters',
+          label: 'Defaulters Watchlist (<75%)',
+          to: '/rep?tab=defaulters',
+          match: (p, sp) => p === '/rep' && sp.get('tab') === 'defaulters',
+        },
+        {
+          id: 'rep-audit',
+          label: 'Device & Anti-Proxy Audit',
+          to: '/rep?tab=audit',
+          match: (p, sp) => p === '/rep' && sp.get('tab') === 'audit',
         },
         {
           id: 'rep-guide',
@@ -153,7 +226,7 @@ export function Shell({ children }: { children: ReactNode }) {
     }
 
     return [];
-  }, [role]);
+  }, [role, activeClassId]);
 
   const classSubNav = useMemo<NavEntry[]>(() => {
     if (!activeClassId) return [];
@@ -167,7 +240,7 @@ export function Shell({ children }: { children: ReactNode }) {
       },
       {
         id: 'cls-students',
-        label: 'Student Roster',
+        label: 'Student Roster & Claims',
         to: `${base}/students`,
         match: (p) => p === `${base}/students`,
       },
@@ -179,7 +252,7 @@ export function Shell({ children }: { children: ReactNode }) {
       },
       {
         id: 'cls-export',
-        label: 'Export Attendance',
+        label: 'Export Attendance Matrix',
         to: `${base}/export`,
         match: (p) => p === `${base}/export`,
       },
@@ -202,9 +275,17 @@ export function Shell({ children }: { children: ReactNode }) {
     for (const c of classSubNav) {
       list.push({
         id: c.id,
-        label: c.label,
+        label: `${activeClass?.name ?? 'Class'}: ${c.label}`,
         group: 'Active Class',
         to: c.to,
+      });
+    }
+    for (const cl of userClasses) {
+      list.push({
+        id: `switch-class-${cl.id}`,
+        label: `Switch to ${cl.name} (${cl.level || cl.join_code})`,
+        group: 'Switch Class',
+        action: () => handleSwitchClass(cl.id),
       });
     }
     if (role) {
@@ -217,7 +298,7 @@ export function Shell({ children }: { children: ReactNode }) {
     }
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [primaryNav, classSubNav, role]);
+  }, [primaryNav, classSubNav, role, userClasses, activeClass]);
 
   const initials = (profile?.full_name || user?.email || 'CP')
     .split(/[\s@._-]+/)
@@ -282,7 +363,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <aside className={`saas-sidebar ${mobileMenuOpen ? 'is-open' : ''}`} aria-label="Primary Sidebar">
         <div className="saas-sidebar-top">
           <div className="saas-brand-row">
-            <Link to={homePath} className="saas-brand">
+            <Link to={homePath} className="saas-brand" onClick={() => setMobileMenuOpen(false)}>
               <span className="saas-brand-mark" aria-hidden="true">
                 CP
               </span>
@@ -309,6 +390,25 @@ export function Shell({ children }: { children: ReactNode }) {
             </button>
           </div>
 
+          {/* Quick Class Context Selector for Class Reps & Admins */}
+          {(role === 'rep' || role === 'super_admin') && userClasses.length > 0 && (
+            <div className="saas-class-selector">
+              <span className="saas-selector-label">ACTIVE CLASS:</span>
+              <select
+                className="saas-selector-select"
+                value={activeClassId ?? ''}
+                onChange={(e) => handleSwitchClass(e.target.value)}
+                aria-label="Select active class"
+              >
+                {userClasses.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} {c.level ? `(${c.level})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <button
             type="button"
             className="saas-cmd-trigger"
@@ -324,6 +424,32 @@ export function Shell({ children }: { children: ReactNode }) {
         </div>
 
         <div className="saas-sidebar-scroll">
+          {/* Class Management Tabs (if an active class is selected) */}
+          {classSubNav.length > 0 && (
+            <div className="saas-nav-group">
+              <span className="saas-nav-title">
+                {activeClass ? `${activeClass.name.toUpperCase()} TABS` : 'CLASS MANAGEMENT'}
+              </span>
+              <nav className="saas-vnav" aria-label="Active class navigation">
+                {classSubNav.map((item) => {
+                  const active = item.match(location.pathname, searchParams);
+                  return (
+                    <Link
+                      key={item.id}
+                      to={item.to}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className={`saas-vnav-link ${active ? 'is-active' : ''}`}
+                    >
+                      <span className="saas-vnav-dot" aria-hidden="true" />
+                      <span className="saas-vnav-label">{item.label}</span>
+                      {item.badge && <span className="saas-vnav-badge">{item.badge}</span>}
+                    </Link>
+                  );
+                })}
+              </nav>
+            </div>
+          )}
+
           <div className="saas-nav-group">
             <span className="saas-nav-title">
               {role === 'super_admin'
@@ -339,6 +465,7 @@ export function Shell({ children }: { children: ReactNode }) {
                   <Link
                     key={item.id}
                     to={item.to}
+                    onClick={() => setMobileMenuOpen(false)}
                     className={`saas-vnav-link ${active ? 'is-active' : ''}`}
                   >
                     <span className="saas-vnav-dot" aria-hidden="true" />
@@ -349,27 +476,6 @@ export function Shell({ children }: { children: ReactNode }) {
               })}
             </nav>
           </div>
-
-          {classSubNav.length > 0 && (
-            <div className="saas-nav-group">
-              <span className="saas-nav-title">ACTIVE CLASS TABS</span>
-              <nav className="saas-vnav" aria-label="Active class navigation">
-                {classSubNav.map((item) => {
-                  const active = item.match(location.pathname, searchParams);
-                  return (
-                    <Link
-                      key={item.id}
-                      to={item.to}
-                      className={`saas-vnav-link ${active ? 'is-active' : ''}`}
-                    >
-                      <span className="saas-vnav-dot" aria-hidden="true" />
-                      <span className="saas-vnav-label">{item.label}</span>
-                    </Link>
-                  );
-                })}
-              </nav>
-            </div>
-          )}
         </div>
 
         <div className="saas-sidebar-footer">
@@ -409,8 +515,8 @@ export function Shell({ children }: { children: ReactNode }) {
                 {role === 'super_admin'
                   ? 'Super Admin Console'
                   : role === 'rep'
-                    ? activeClassId
-                      ? 'Class Management'
+                    ? activeClass
+                      ? activeClass.name
                       : 'Classes Workspace'
                     : 'Student Attendance'}
               </strong>
@@ -429,7 +535,7 @@ export function Shell({ children }: { children: ReactNode }) {
               className="btn btn-secondary btn-sm saas-search-btn"
               onClick={() => setCmdOpen(true)}
             >
-              <span>Search</span>
+              <span>Search / ⌘K</span>
             </button>
           </div>
         </header>
@@ -443,6 +549,7 @@ export function Shell({ children }: { children: ReactNode }) {
               <Link
                 key={item.id}
                 to={item.to}
+                onClick={() => setMobileMenuOpen(false)}
                 className={`saas-mobile-tab ${active ? 'is-active' : ''}`}
               >
                 <span className="saas-mobile-tab-dot" aria-hidden="true" />

@@ -83,6 +83,8 @@ export interface Session {
   created_at: string;
 }
 
+export type AttendanceStatus = 'present' | 'late' | 'excused';
+
 export interface Attendance {
   id: string;
   session_id: string;
@@ -91,6 +93,8 @@ export interface Attendance {
   distance_m: number | null;
   accuracy_m: number | null;
   manual: boolean;
+  status?: AttendanceStatus;
+  notes?: string | null;
 }
 
 /** A roster row before it is saved. */

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useAsync } from '@/hooks/useAsync';
 import { listStudents } from '@/services/roster';
 import { listAttendanceFor, listSessions } from '@/services/sessions';
-import { Badge, EmptyState, ErrorAlert, PageLoader, SelectField, TextField } from '@/components/ui';
+import { Badge, Button, EmptyState, ErrorAlert, PageLoader, SelectField, TextField } from '@/components/ui';
 import { KpiStatGrid, ProgressBar } from '@/components/saas';
 import type { Attendance, ClassRoom, Session, Student } from '@/types';
 
@@ -98,6 +98,36 @@ export function AnalyticsTab({ klass }: { klass: ClassRoom }) {
     });
   }, [report, filter, search]);
 
+  const sendWhatsAppWarning = (row: StudentEligibilityRow) => {
+    const text = [
+      `*ATTENDANCE EXAM ELIGIBILITY NOTICE — 75% RULE*`,
+      `Student: ${row.student.full_name} (${row.student.matric_no})`,
+      `Class: ${klass.name} ${klass.level ? `(${klass.level})` : ''}`,
+      `Current Attendance Rate: ${row.rate}% (${row.attended}/${row.totalSessions} sessions)`,
+      `Status: ${row.eligible ? 'ELIGIBLE' : 'DEBARRED / BELOW 75% THRESHOLD'}`,
+      `\n*Action Required:* You have failed to meet the required 75% lecture attendance threshold. Contact your Class Representative immediately to review your attendance record before the examination list is signed.`,
+    ].join('\n');
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+  };
+
+  const shareSummaryWithLecturer = () => {
+    const eligibleCount = report.filter((r) => r.eligible).length;
+    const defaulterCount = report.length - eligibleCount;
+    const avg = report.length > 0 ? Math.round(report.reduce((s, r) => s + r.rate, 0) / report.length) : 0;
+    const text = [
+      `*CampusPulse — Official 75% Exam Eligibility Summary*`,
+      `*Cohort:* ${klass.name} ${klass.level ? `(${klass.level})` : ''}`,
+      `*Course:* ${course === ALL ? 'All Courses Combined' : course}`,
+      `*Total Lectures Held:* ${filteredSessions.length}`,
+      `*Total Roster Students:* ${report.length}`,
+      `*Class Average Attendance:* ${avg}%`,
+      `*Exam Qualified (≥75%):* ${eligibleCount} students`,
+      `*Disqualified Defaulters (<75%):* ${defaulterCount} students`,
+      `\n_Generated for Course Lecturer & Departmental Examination Committee_`,
+    ].join('\n');
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+  };
+
   if (base.loading) return <PageLoader />;
   if (base.error) return <ErrorAlert error={base.error} onRetry={() => base.reload()} />;
 
@@ -123,6 +153,9 @@ export function AnalyticsTab({ klass }: { klass: ClassRoom }) {
             Tracks individual student attendance percentages against the 75% NUC exam eligibility threshold.
           </p>
         </div>
+        <Button size="sm" variant="secondary" onClick={shareSummaryWithLecturer}>
+          💬 WhatsApp Summary to Lecturer / HOD
+        </Button>
       </div>
 
       <KpiStatGrid
@@ -198,13 +231,17 @@ export function AnalyticsTab({ klass }: { klass: ClassRoom }) {
                   <th className="num">Attended</th>
                   <th style={{ minWidth: '150px' }}>Attendance Rate</th>
                   <th>75% Exam Status</th>
+                  <th className="actions-col">Notice</th>
                 </tr>
               </thead>
               <tbody>
                 {visibleRows.map((row) => (
                   <tr key={row.student.id}>
                     <td>
-                      <strong>{row.student.full_name}</strong>
+                      <div className="row" style={{ gap: '0.45rem' }}>
+                        <strong>{row.student.full_name}</strong>
+                        {row.rate === 100 && <Badge tone="ok">🔥 100% Streak</Badge>}
+                      </div>
                     </td>
                     <td className="mono">{row.student.matric_no}</td>
                     <td className="num mono">
@@ -225,11 +262,22 @@ export function AnalyticsTab({ klass }: { klass: ClassRoom }) {
                         <Badge tone="muted">Below 75% ({row.rate}%)</Badge>
                       )}
                     </td>
+                    <td className="actions-col">
+                      {!row.eligible && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => sendWhatsAppWarning(row)}
+                        >
+                          WhatsApp Warning
+                        </Button>
+                      )}
+                    </td>
                   </tr>
                 ))}
                 {visibleRows.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="muted center">
+                    <td colSpan={6} className="muted center">
                       No students match the selected filter.
                     </td>
                   </tr>

@@ -125,14 +125,101 @@ export async function listAttendanceFor(sessionIds: string[]): Promise<Attendanc
   return out;
 }
 
-export async function markPresent(sessionId: string, studentId: string): Promise<Attendance> {
-  return unwrap(
-    await supabase
-      .from('attendance')
-      .insert({ session_id: sessionId, student_id: studentId, manual: true })
-      .select()
-      .single(),
-  );
+export async function markPresent(
+  sessionId: string,
+  studentId: string,
+  status: 'present' | 'late' | 'excused' = 'present',
+  notes?: string,
+): Promise<Attendance> {
+  const payload: Record<string, any> = {
+    session_id: sessionId,
+    student_id: studentId,
+    manual: true,
+    status,
+    notes: notes || null,
+  };
+  const res = await supabase.from('attendance').upsert(payload as any, { onConflict: 'session_id,student_id' }).select().single();
+  if (res.error) {
+    // Fallback if status/notes columns have not yet migrated
+    return unwrap(
+      await supabase
+        .from('attendance')
+        .insert({ session_id: sessionId, student_id: studentId, manual: true })
+        .select()
+        .single(),
+    );
+  }
+  return res.data as Attendance;
+}
+
+export async function markBatchAttendance(
+  sessionId: string,
+  studentIds: string[],
+  status: 'present' | 'late' | 'excused' = 'present',
+): Promise<number> {
+  if (studentIds.length === 0) return 0;
+  const rows = studentIds.map((id) => ({
+    session_id: sessionId,
+    student_id: id,
+    manual: true,
+    distance_m: 0,
+    accuracy_m: 0,
+    status,
+  }));
+  let count = 0;
+  for (const batch of chunk(rows, 200)) {
+    const res = await supabase.from('attendance').upsert(batch as any, { onConflict: 'session_id,student_id' });
+    if (res.error) {
+      const fallback = batch.map(({ session_id, student_id, manual }) => ({ session_id, student_id, manual }));
+      check(await supabase.from('attendance').upsert(fallback as any, { onConflict: 'session_id,student_id' }));
+    }
+    count += batch.length;
+  }
+  return count;
+}
+
+export interface LiveCampusSession {
+  id: string;
+  class_id: string;
+  class_name: string;
+  department_name: string | null;
+  level: string | null;
+  course_code: string;
+  venue: string;
+  starts_at: string;
+  ends_at: string;
+  radius_m: number;
+  present_count: number;
+}
+
+export async function listLiveCampusSessions(): Promise<LiveCampusSession[]> {
+  try {
+    const nowIso = new Date().toISOString();
+    const { data, error } = await supabase
+      .from('sessions')
+      .select('*, classes(name, level, departments(name)), attendance(count)')
+      .lte('starts_at', nowIso)
+      .gte('ends_at', nowIso)
+      .order('starts_at', { ascending: false });
+
+    if (error || !data) return [];
+
+    return data.map((row: any) => ({
+      id: row.id,
+      class_id: row.class_id,
+      class_name: row.classes?.name ?? 'Class',
+      department_name: row.classes?.departments?.name ?? null,
+      level: row.classes?.level ?? null,
+      course_code: row.course_code,
+      venue: row.venue,
+      starts_at: row.starts_at,
+      ends_at: row.ends_at,
+      radius_m: row.radius_m,
+      present_count: row.attendance?.[0]?.count ?? 0,
+    }));
+  } catch {
+    return [];
+  }
 }
 
 export async function removeAttendance(id: string): Promise<void> {

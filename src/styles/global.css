@@ -1293,6 +1293,36 @@ code,
   color: #9cb2a6;
 }
 
+.saas-class-selector {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.5rem 0.6rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+}
+
+.saas-selector-label {
+  font-size: 0.65rem;
+  font-weight: 750;
+  letter-spacing: 0.07em;
+  color: #8da698;
+}
+
+.saas-selector-select {
+  width: 100%;
+  height: 1.95rem;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: #101e17;
+  color: #ffffff;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0 0.45rem;
+  outline: none;
+  cursor: pointer;
+}
+
 .saas-cmd-trigger {
   width: 100%;
   height: 2.2rem;

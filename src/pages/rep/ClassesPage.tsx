@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useAction, useAsync } from '@/hooks/useAsync';
+import { supabase } from '@/services/db';
 import { createClass, listClasses } from '@/services/classes';
 import { listDepartments } from '@/services/admin';
 import {
@@ -18,7 +19,7 @@ import { KpiStatGrid, VerticalTabs, type VerticalTabItem } from '@/components/sa
 import { formatDate } from '@/lib/format';
 import { ACADEMIC_LEVELS, type Department } from '@/types';
 
-type RepWorkspaceTab = 'directory' | 'create' | 'guide';
+type RepWorkspaceTab = 'directory' | 'create' | 'defaulters' | 'audit' | 'guide';
 
 export default function ClassesPage() {
   const classes = useAsync(listClasses, []);
@@ -34,7 +35,7 @@ export default function ClassesPage() {
 
   const rawTab = searchParams.get('tab') as RepWorkspaceTab | null;
   const activeTab: RepWorkspaceTab =
-    rawTab && ['directory', 'create', 'guide'].includes(rawTab)
+    rawTab && ['directory', 'create', 'defaulters', 'audit', 'guide'].includes(rawTab)
       ? rawTab
       : list.length === 0
         ? 'create'
@@ -76,6 +77,16 @@ export default function ClassesPage() {
       label: 'Create New Class',
       description: 'Choose department, level & start date',
       badge: '+',
+    },
+    {
+      key: 'defaulters',
+      label: 'Defaulters Watchlist',
+      description: 'Students below 75% NUC benchmark',
+    },
+    {
+      key: 'audit',
+      label: 'Device & Anti-Proxy Audit',
+      description: 'Passkey & phone binding records',
     },
     {
       key: 'guide',
@@ -253,6 +264,14 @@ export default function ClassesPage() {
             />
           )}
 
+          {activeTab === 'defaulters' && (
+            <RepDefaultersPanel classes={list} />
+          )}
+
+          {activeTab === 'audit' && (
+            <RepAuditPanel classes={list} />
+          )}
+
           {activeTab === 'guide' && (
             <div className="panel stack">
               <h2>Class Rep Operations Guide</h2>
@@ -417,5 +436,261 @@ function NewClassForm({
         )}
       </div>
     </form>
+  );
+}
+
+function RepDefaultersPanel({ classes }: { classes: any[] }) {
+  const [selectedClassId, setSelectedClassId] = useState<string>(classes[0]?.id ?? '');
+  const [query, setQuery] = useState('');
+
+  const defaultersQuery = useAsync(async () => {
+    if (!selectedClassId) return [];
+    const { data: students } = await supabase
+      .from('students')
+      .select('id, full_name, matric_no')
+      .eq('class_id', selectedClassId)
+      .order('full_name');
+
+    if (!students || students.length === 0) return [];
+
+    const { data: sessions } = await supabase
+      .from('sessions')
+      .select('id')
+      .eq('class_id', selectedClassId);
+
+    const sessionCount = sessions?.length ?? 0;
+    const sessionIds = (sessions ?? []).map((s) => s.id);
+
+    const { data: attendanceRows } = await supabase
+      .from('attendance')
+      .select('student_id')
+      .in('session_id', sessionIds.length > 0 ? sessionIds : ['00000000-0000-0000-0000-000000000000']);
+
+    const counts = new Map<string, number>();
+    for (const a of attendanceRows ?? []) {
+      counts.set(a.student_id, (counts.get(a.student_id) ?? 0) + 1);
+    }
+
+    return students.map((st) => {
+      const attended = counts.get(st.id) ?? 0;
+      const rate = sessionCount > 0 ? Math.round((attended / sessionCount) * 100) : 0;
+      return {
+        ...st,
+        attended,
+        totalSessions: sessionCount,
+        rate,
+        isDefaulter: rate < 75,
+      };
+    });
+  }, [selectedClassId]);
+
+  const list = (defaultersQuery.data ?? []).filter((st) => {
+    if (!query) return true;
+    const q = query.toLowerCase();
+    return st.full_name.toLowerCase().includes(q) || st.matric_no.toLowerCase().includes(q);
+  });
+
+  const selectedClass = classes.find((c) => c.id === selectedClassId);
+
+  const shareWhatsAppNotice = (st: (typeof list)[0]) => {
+    const text = [
+      `*CAMPUS ATTENDANCE WARNING — 75% EXAM THRESHOLD*`,
+      `Student: ${st.full_name} (${st.matric_no})`,
+      `Cohort: ${selectedClass?.name ?? 'Class'}`,
+      `Attendance Record: ${st.attended}/${st.totalSessions} sessions (${st.rate}%)`,
+      `\n*Notice:* You have fallen below the 75% attendance threshold required to sit for semester examinations. Please ensure your attendance is updated and see your Class Representative immediately.`,
+    ].join('\n');
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+  };
+
+  return (
+    <div className="panel stack">
+      <div className="section-head">
+        <div>
+          <h2>Defaulters Watchlist (&lt; 75% NUC Benchmark)</h2>
+          <p className="muted small">
+            Quickly audit and warn students whose attendance rate is below exam qualification criteria.
+          </p>
+        </div>
+      </div>
+
+      <div className="filter-bar">
+        <SelectField
+          label="Select Class Cohort"
+          value={selectedClassId}
+          onChange={(e) => setSelectedClassId(e.target.value)}
+        >
+          {classes.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name} {c.level ? `(${c.level})` : ''}
+            </option>
+          ))}
+        </SelectField>
+        <TextField
+          label="Search student"
+          placeholder="Name or matric number…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </div>
+
+      {defaultersQuery.loading ? (
+        <PageLoader />
+      ) : list.length === 0 ? (
+        <p className="muted small">No students found for this class.</p>
+      ) : (
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Student</th>
+                <th>Matric No</th>
+                <th className="num">Attended</th>
+                <th className="num">Rate</th>
+                <th>Status</th>
+                <th className="actions-col">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.map((st) => (
+                <tr key={st.id}>
+                  <td>
+                    <strong>{st.full_name}</strong>
+                  </td>
+                  <td className="mono">{st.matric_no}</td>
+                  <td className="num">
+                    {st.attended} / {st.totalSessions}
+                  </td>
+                  <td className="num font-bold">
+                    <span style={{ color: st.rate >= 75 ? 'var(--ok)' : 'var(--danger)' }}>
+                      {st.rate}%
+                    </span>
+                  </td>
+                  <td>
+                    <Badge tone={st.rate >= 75 ? 'ok' : 'muted'}>
+                      {st.rate >= 75 ? 'Eligible' : 'At-Risk Defaulter'}
+                    </Badge>
+                  </td>
+                  <td className="actions-col">
+                    <Button
+                      size="sm"
+                      variant={st.rate < 75 ? 'secondary' : 'ghost'}
+                      onClick={() => shareWhatsAppNotice(st)}
+                    >
+                      WhatsApp Warning
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RepAuditPanel({ classes }: { classes: any[] }) {
+  const [selectedClassId, setSelectedClassId] = useState<string>(classes[0]?.id ?? '');
+  const [query, setQuery] = useState('');
+
+  const auditQuery = useAsync(async () => {
+    if (!selectedClassId) return [];
+    const { data } = await supabase
+      .from('students')
+      .select('id, full_name, matric_no, user_id, passkey_id, device_token, claimed_at, suspended, created_at')
+      .eq('class_id', selectedClassId)
+      .order('full_name');
+    return data ?? [];
+  }, [selectedClassId]);
+
+  const list = (auditQuery.data ?? []).filter((st: any) => {
+    if (!query) return true;
+    const q = query.toLowerCase();
+    return st.full_name.toLowerCase().includes(q) || st.matric_no.toLowerCase().includes(q);
+  });
+
+  return (
+    <div className="panel stack">
+      <div className="section-head">
+        <div>
+          <h2>Device & Anti-Proxy Audit</h2>
+          <p className="muted small">
+            Verify student hardware WebAuthn passkey binding and 1-phone physical device tokens to eliminate proxy attendance.
+          </p>
+        </div>
+      </div>
+
+      <div className="filter-bar">
+        <SelectField
+          label="Select Class Cohort"
+          value={selectedClassId}
+          onChange={(e) => setSelectedClassId(e.target.value)}
+        >
+          {classes.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name} {c.level ? `(${c.level})` : ''}
+            </option>
+          ))}
+        </SelectField>
+        <TextField
+          label="Search student audit log"
+          placeholder="Filter by name or matric number…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </div>
+
+      {auditQuery.loading ? (
+        <PageLoader />
+      ) : (
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Student</th>
+                <th>Matric No</th>
+                <th>Hardware Passkey</th>
+                <th>Device Token</th>
+                <th>Claim Date</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.map((st: any) => (
+                <tr key={st.id}>
+                  <td>
+                    <strong>{st.full_name}</strong>
+                  </td>
+                  <td className="mono">{st.matric_no}</td>
+                  <td>
+                    {st.passkey_id ? (
+                      <Badge tone="ok">Passkey Bound</Badge>
+                    ) : (
+                      <Badge tone="muted">Unbound</Badge>
+                    )}
+                  </td>
+                  <td className="mono" style={{ fontSize: '0.75rem' }}>
+                    {st.device_token ? `${st.device_token.slice(0, 10)}…` : '—'}
+                  </td>
+                  <td className="muted nowrap">
+                    {st.claimed_at ? formatDate(st.claimed_at) : 'Unclaimed'}
+                  </td>
+                  <td>
+                    {st.suspended ? (
+                      <Badge tone="muted">Suspended</Badge>
+                    ) : st.user_id ? (
+                      <Badge tone="ok">Verified Device</Badge>
+                    ) : (
+                      <Badge tone="neutral">Pending Claim</Badge>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   );
 }

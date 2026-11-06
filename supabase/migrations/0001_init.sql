@@ -183,8 +183,12 @@ create table if not exists public.attendance (
   distance_m     float8,
   accuracy_m     float8,
   manual         boolean not null default false,
+  status         text not null default 'present' check (status in ('present', 'late', 'excused')),
+  notes          text,
   unique (session_id, student_id)
 );
+alter table public.attendance add column if not exists status text not null default 'present';
+alter table public.attendance add column if not exists notes text;
 create index if not exists attendance_student_idx on public.attendance (student_id);
 
 -- -----------------------------------------------------------------------------
