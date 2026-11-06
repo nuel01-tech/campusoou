@@ -1,10 +1,11 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAction, useAsync, useNow, usePolling } from '@/hooks/useAsync';
 import { useToast } from '@/hooks/useToast';
 import { getClass } from '@/services/classes';
 import { listStudents } from '@/services/roster';
 import {
+  autoMarkClassRepsForSession,
   closeSession,
   deleteSession,
   extendSession,
@@ -88,6 +89,21 @@ export default function LiveSessionPage() {
   );
 
   const students = base.data?.students ?? [];
+
+  // Ensure all Class Reps in this class are automatically marked present for this session
+  useEffect(() => {
+    if (!base.data || attendance.loading || !attendance.data) return;
+    const missingReps = base.data.students.filter(
+      (s) => s.is_rep && !s.suspended && !byStudent.has(s.id),
+    );
+    if (missingReps.length === 0) return;
+
+    void autoMarkClassRepsForSession(sessionId, base.data.session.class_id, missingReps).then((inserted) => {
+      if (inserted.length > 0) {
+        void attendance.reload({ silent: true });
+      }
+    });
+  }, [base.data, attendance, byStudent, sessionId]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -215,12 +231,17 @@ export default function LiveSessionPage() {
               const busy = busyStudent === s.id;
               return (
                 <tr key={s.id}>
-                  <td>{s.full_name}</td>
+                  <td>
+                    <div className="row" style={{ gap: '0.5rem' }}>
+                      <span>{s.full_name}</span>
+                      {s.is_rep && <Badge tone="live">Class Rep</Badge>}
+                    </div>
+                  </td>
                   <td className="mono">{s.matric_no}</td>
                   <td>
                     {row ? (
                       <span className="status-present">
-                        Present · {formatTime(row.checked_in_at)}
+                        Present · {s.is_rep && !row.manual ? 'Auto (Class Rep)' : formatTime(row.checked_in_at)}
                       </span>
                     ) : (
                       <span className="muted">Absent</span>

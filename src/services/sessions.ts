@@ -1,6 +1,7 @@
 import { chunk, fetchAll, supabase } from './db';
+import { listStudents } from './roster';
 import { check, unwrap } from '@/lib/errors';
-import type { Attendance, Session } from '@/types';
+import type { Attendance, Session, Student } from '@/types';
 
 export interface NewSession {
   class_id: string;
@@ -38,17 +39,51 @@ export async function listSessionsWithCounts(classId: string): Promise<SessionWi
   return rows.map(({ attendance, ...s }) => ({ ...s, present: attendance[0]?.count ?? 0 }));
 }
 
+/**
+ * Automatically marks all non-suspended Class Reps in `classId` as present for `sessionId`.
+ */
+export async function autoMarkClassRepsForSession(
+  sessionId: string,
+  classId: string,
+  studentsList?: Student[],
+): Promise<Attendance[]> {
+  try {
+    const students = studentsList ?? (await listStudents(classId));
+    const repStudents = students.filter((s) => s.is_rep && !s.suspended);
+    if (repStudents.length === 0) return [];
+
+    const payload = repStudents.map((rep) => ({
+      session_id: sessionId,
+      student_id: rep.id,
+      distance_m: 0,
+      accuracy_m: 0,
+      manual: false,
+    }));
+
+    const { data } = await supabase
+      .from('attendance')
+      .upsert(payload as any, { onConflict: 'session_id,student_id', ignoreDuplicates: true })
+      .select();
+
+    return (data as Attendance[] | null) ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export async function createSession(input: NewSession): Promise<Session> {
   const { duration_min, ...rest } = input;
   const starts = new Date();
   const ends = new Date(starts.getTime() + duration_min * 60_000);
-  return unwrap(
+  const session = unwrap<Session>(
     await supabase
       .from('sessions')
       .insert({ ...rest, starts_at: starts.toISOString(), ends_at: ends.toISOString() })
       .select()
       .single(),
   );
+  await autoMarkClassRepsForSession(session.id, session.class_id);
+  return session;
 }
 
 export async function closeSession(id: string): Promise<Session> {

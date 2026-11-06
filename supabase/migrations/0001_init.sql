@@ -146,10 +146,12 @@ create table if not exists public.students (
   passkey_id    text,
   device_token  text,
   claimed_at    timestamptz,
+  is_rep        boolean not null default false,
   suspended     boolean not null default false,
   created_at    timestamptz not null default now(),
   unique (class_id, matric_no)
 );
+alter table public.students add column if not exists is_rep boolean not null default false;
 alter table public.students add column if not exists suspended boolean not null default false;
 alter table public.students add column if not exists passkey_id text;
 alter table public.students add column if not exists device_token text;
@@ -493,24 +495,85 @@ update auth.users
  where coalesce(is_anonymous, false) = false;
 
 -- -----------------------------------------------------------------------------
--- Normalisation triggers on students & sessions
+-- Normalisation & Automatic Class Rep Attendance triggers on students & sessions
 -- -----------------------------------------------------------------------------
+
+create or replace function public.is_student_class_rep(
+  p_class_id  uuid,
+  p_full_name text,
+  p_is_rep    boolean default false
+)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(p_is_rep, false)
+      or exists (
+        select 1
+          from public.classes c
+          join public.profiles p
+            on (
+              p.id = c.owner_id
+              or (
+                p.role = 'rep'
+                and p.active = true
+                and (c.department_id is null or p.department_id = c.department_id)
+                and (c.level is null or p.level = c.level)
+              )
+            )
+         where c.id = p_class_id
+           and (
+             public.names_match(p_full_name, p.full_name)
+             or public.names_match(p.full_name, p_full_name)
+           )
+      );
+$$;
 
 create or replace function public.students_normalize()
 returns trigger
 language plpgsql
+security definer
+set search_path = public
 as $$
 begin
   new.matric_no := public.normalize_matric(new.matric_no);
   new.full_name := regexp_replace(trim(new.full_name), '\s+', ' ', 'g');
+  if not coalesce(new.is_rep, false) then
+    new.is_rep := public.is_student_class_rep(new.class_id, new.full_name, false);
+  end if;
   return new;
 end;
 $$;
 
 drop trigger if exists students_normalize_trg on public.students;
 create trigger students_normalize_trg
-before insert or update of matric_no, full_name on public.students
+before insert or update of matric_no, full_name, is_rep on public.students
 for each row execute function public.students_normalize();
+
+create or replace function public.students_auto_mark_rep_attendance()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.suspended = false and public.is_student_class_rep(new.class_id, new.full_name, new.is_rep) then
+    insert into public.attendance (session_id, student_id, distance_m, accuracy_m, manual)
+    select s.id, new.id, 0, 0, false
+      from public.sessions s
+     where s.class_id = new.class_id
+    on conflict (session_id, student_id) do nothing;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists students_auto_mark_rep_attendance_trg on public.students;
+create trigger students_auto_mark_rep_attendance_trg
+after insert or update of is_rep, full_name, suspended on public.students
+for each row execute function public.students_auto_mark_rep_attendance();
 
 create or replace function public.sessions_normalize()
 returns trigger
@@ -527,6 +590,43 @@ drop trigger if exists sessions_normalize_trg on public.sessions;
 create trigger sessions_normalize_trg
 before insert or update of course_code, venue on public.sessions
 for each row execute function public.sessions_normalize();
+
+create or replace function public.sessions_auto_mark_reps()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.attendance (session_id, student_id, distance_m, accuracy_m, manual)
+  select new.id, st.id, 0, 0, false
+    from public.students st
+   where st.class_id = new.class_id
+     and st.suspended = false
+     and public.is_student_class_rep(st.class_id, st.full_name, st.is_rep)
+  on conflict (session_id, student_id) do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists sessions_auto_mark_reps_trg on public.sessions;
+create trigger sessions_auto_mark_reps_trg
+after insert on public.sessions
+for each row execute function public.sessions_auto_mark_reps();
+
+-- Backfill existing Class Reps on rosters and auto-mark them across existing sessions
+update public.students st
+   set is_rep = true
+ where st.is_rep = false
+   and public.is_student_class_rep(st.class_id, st.full_name, false);
+
+insert into public.attendance (session_id, student_id, distance_m, accuracy_m, manual)
+select s.id, st.id, 0, 0, false
+  from public.sessions s
+  join public.students st on st.class_id = s.class_id
+ where st.suspended = false
+   and public.is_student_class_rep(st.class_id, st.full_name, st.is_rep)
+on conflict (session_id, student_id) do nothing;
 
 -- -----------------------------------------------------------------------------
 -- Row level security

@@ -1,7 +1,15 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useAction, useAsync } from '@/hooks/useAsync';
 import { useToast } from '@/hooks/useToast';
-import { addStudent, deleteStudent, listStudents, resetClaim, setStudentSuspended } from '@/services/roster';
+import {
+  addStudent,
+  backfillRepAttendanceForClass,
+  deleteStudent,
+  listStudents,
+  resetClaim,
+  setStudentRep,
+  setStudentSuspended,
+} from '@/services/roster';
 import { Badge, Button, ConfirmButton, EmptyState, ErrorAlert, PageLoader, SelectField, TextField } from '@/components/ui';
 import { ProgressBar } from '@/components/saas';
 import { AppError, toAppError } from '@/lib/errors';
@@ -9,7 +17,7 @@ import { pluralize } from '@/lib/format';
 import { RosterImport } from './RosterImport';
 import type { Student } from '@/types';
 
-type RosterFilter = 'all' | 'claimed' | 'unclaimed' | 'suspended';
+type RosterFilter = 'all' | 'reps' | 'claimed' | 'unclaimed' | 'suspended';
 
 export function RosterTab({ classId }: { classId: string }) {
   const students = useAsync(() => listStudents(classId), [classId]);
@@ -19,14 +27,23 @@ export function RosterTab({ classId }: { classId: string }) {
   const [mode, setMode] = useState<'none' | 'import' | 'add'>('none');
 
   const list = students.data ?? [];
-  const claimed = list.filter((s) => s.user_id).length;
+  const repCount = list.filter((s) => s.is_rep).length;
+  const claimed = list.filter((s) => s.user_id || s.is_rep).length;
   const suspendedCount = list.filter((s) => s.suspended).length;
+
+  // Automatically backfill attendance for all detected Class Reps across existing sessions
+  useEffect(() => {
+    if (list.some((s) => s.is_rep && !s.suspended)) {
+      void backfillRepAttendanceForClass(classId, list);
+    }
+  }, [classId, list]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return list.filter((s) => {
-      if (statusFilter === 'claimed' && !s.user_id) return false;
-      if (statusFilter === 'unclaimed' && s.user_id) return false;
+      if (statusFilter === 'reps' && !s.is_rep) return false;
+      if (statusFilter === 'claimed' && !s.user_id && !s.is_rep) return false;
+      if (statusFilter === 'unclaimed' && (s.user_id || s.is_rep)) return false;
       if (statusFilter === 'suspended' && !s.suspended) return false;
       if (!q) return true;
       return s.full_name.toLowerCase().includes(q) || s.matric_no.toLowerCase().includes(q);
@@ -35,6 +52,20 @@ export function RosterTab({ classId }: { classId: string }) {
 
   const replace = (updated: Student) =>
     students.setData((prev) => (prev ?? []).map((s) => (s.id === updated.id ? updated : s)));
+
+  const handleToggleRep = async (s: Student) => {
+    try {
+      const updated = await setStudentRep(s, !s.is_rep);
+      replace(updated);
+      toast(
+        updated.is_rep
+          ? `${s.full_name} set as Class Rep — automatically marked present in all sessions`
+          : `${s.full_name} removed from automatic Class Rep attendance`,
+      );
+    } catch (e) {
+      toast(toAppError(e).message, 'error');
+    }
+  };
 
   const handleToggleSuspend = async (s: Student) => {
     try {
@@ -75,7 +106,7 @@ export function RosterTab({ classId }: { classId: string }) {
             <h2>Student Roster & Phone Claims</h2>
             {list.length > 0 && (
               <p className="muted small">
-                {pluralize(list.length, 'student')} · {claimed} claimed ({list.length - claimed} unclaimed)
+                {pluralize(list.length, 'student')} · {claimed} ready ({repCount} Class {repCount === 1 ? 'Rep' : 'Reps'} auto-marked present)
               </p>
             )}
           </div>
@@ -93,7 +124,7 @@ export function RosterTab({ classId }: { classId: string }) {
           <ProgressBar
             value={claimed}
             max={list.length}
-            label={`Phone Claim Onboarding (${claimed} of ${list.length} students linked)`}
+            label={`Phone Claim & Class Rep Onboarding (${claimed} of ${list.length} students active)`}
             tone={claimed === list.length ? 'ok' : 'accent'}
           />
         )}
@@ -133,7 +164,7 @@ export function RosterTab({ classId }: { classId: string }) {
           title="No students yet"
           action={<Button onClick={() => setMode('import')}>Import a CSV or Excel file</Button>}
         >
-          Upload the class list with each student's name and matric number. Students use these to claim their account.
+          Upload the class list with each student's name and matric number. Students use these to claim their account, and Class Reps are automatically marked present.
         </EmptyState>
       )}
 
@@ -153,8 +184,9 @@ export function RosterTab({ classId }: { classId: string }) {
               onChange={(e) => setStatusFilter(e.target.value as RosterFilter)}
             >
               <option value="all">All students ({list.length})</option>
-              <option value="claimed">Claimed phones ({claimed})</option>
-              <option value="unclaimed">Unclaimed ({list.length - claimed})</option>
+              <option value="reps">Class Reps · Auto-Present ({repCount})</option>
+              <option value="claimed">Claimed / Auto-Present ({claimed})</option>
+              <option value="unclaimed">Unclaimed ({Math.max(0, list.length - claimed)})</option>
               <option value="suspended">Suspended ({suspendedCount})</option>
             </SelectField>
           </div>
@@ -175,14 +207,19 @@ export function RosterTab({ classId }: { classId: string }) {
                 {filtered.map((s) => (
                   <tr key={s.id}>
                     <td>
-                      <span className={s.suspended ? 'muted' : undefined}>
-                        <strong>{s.full_name}</strong>
-                      </span>
+                      <div className="row" style={{ gap: '0.5rem' }}>
+                        <span className={s.suspended ? 'muted' : undefined}>
+                          <strong>{s.full_name}</strong>
+                        </span>
+                        {s.is_rep && <Badge tone="live">Class Rep</Badge>}
+                      </div>
                     </td>
                     <td className="mono">{s.matric_no}</td>
                     <td>
                       {s.suspended ? (
                         <Badge tone="muted">Suspended</Badge>
+                      ) : s.is_rep ? (
+                        <Badge tone="ok">Auto-Present (Rep)</Badge>
                       ) : s.user_id ? (
                         <Badge tone="ok">Claimed</Badge>
                       ) : (
@@ -190,6 +227,13 @@ export function RosterTab({ classId }: { classId: string }) {
                       )}
                     </td>
                     <td className="actions-col">
+                      <Button
+                        size="sm"
+                        variant={s.is_rep ? 'secondary' : 'ghost'}
+                        onClick={() => handleToggleRep(s)}
+                      >
+                        {s.is_rep ? 'Unset Rep' : 'Make Rep'}
+                      </Button>
                       <Button
                         size="sm"
                         variant="ghost"
@@ -227,8 +271,9 @@ export function RosterTab({ classId }: { classId: string }) {
 function AddStudentForm({ classId, onDone }: { classId: string; onDone: (s?: Student) => void }) {
   const [name, setName] = useState('');
   const [matric, setMatric] = useState('');
+  const [isRep, setIsRep] = useState(false);
   const [touched, setTouched] = useState(false);
-  const add = useAction(() => addStudent(classId, { full_name: name, matric_no: matric }));
+  const add = useAction(() => addStudent(classId, { full_name: name, matric_no: matric, is_rep: isRep }));
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -257,6 +302,16 @@ function AddStudentForm({ classId, onDone }: { classId: string; onDone: (s?: Stu
           error={touched && matric.trim().length < 2 ? 'Enter a matric number.' : null}
         />
       </div>
+      <label className="row" style={{ gap: '0.5rem', cursor: 'pointer' }}>
+        <input
+          type="checkbox"
+          checked={isRep}
+          onChange={(e) => setIsRep(e.target.checked)}
+        />
+        <span className="small">
+          <strong>Class Rep / Assistant Rep</strong> — automatically mark present in every session
+        </span>
+      </label>
       {add.error && (
         <ErrorAlert
           error={

@@ -64,6 +64,7 @@ export interface Student {
   passkey_id?: string | null;
   device_token?: string | null;
   claimed_at: string | null;
+  is_rep?: boolean;
   suspended: boolean;
   created_at: string;
 }
@@ -96,6 +97,7 @@ export interface Attendance {
 export interface RosterEntry {
   full_name: string;
   matric_no: string;
+  is_rep?: boolean;
 }
 
 export interface GeoFix {
