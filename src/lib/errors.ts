@@ -24,19 +24,22 @@ type MessageFor = (detail?: string) => string;
 const MESSAGES: Record<string, string | MessageFor> = {
   // Accounts & Super Admin
   SIGNUP_NOT_ALLOWED:
-    'A Super Admin account already exists, so self-registration is locked. Sign in with your existing account, or ask the Super Admin to create a Class Rep account for you.',
+    'A Super Admin account already exists, so self-registration is locked. Switch to the "Sign in" tab to log in with your Super Admin account.',
   REP_EXISTS: 'A class rep with that email already exists.',
   ACCOUNT_SUSPENDED: 'Your class rep account has been suspended. Contact the Super Admin.',
   STUDENT_SUSPENDED: 'Your account has been suspended by your class rep.',
   INVALID_EMAIL: 'Enter a valid email address.',
-  INVALID_NAME: 'Enter the class rep’s full name.',
+  INVALID_NAME: 'Enter a full name (at least 2 characters).',
+  WEAK_PASSWORD: 'Use at least 8 characters for the password.',
   NOT_FOUND: 'That record could not be found.',
   DB_NOT_MIGRATED:
-    'Database tables are not set up yet. Open your Supabase SQL Editor, paste the contents of supabase/migrations/0001_init.sql, and click Run.',
+    'Database functions are out of date. Open your Supabase SQL Editor, paste the latest supabase/migrations/0001_init.sql, and click Run.',
   SECRET_KEY_USED:
     'You pasted the Supabase SECRET key (sb_secret_...), which Supabase blocks in browsers. Please replace VITE_SUPABASE_ANON_KEY with the PUBLISHABLE / anon public key (starts with sb_publishable_... or eyJ...).',
   INVALID_API_KEY:
     'Invalid Supabase URL or anon key. Check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your .env.local or deployment settings.',
+  EMAIL_SERVICE_503:
+    'Supabase’s email server timed out (Error 503). To fix this permanently: copy and run the updated supabase/migrations/0001_init.sql in your Supabase SQL Editor (or turn off "Confirm email" under Authentication → Providers → Email).',
 
   // Claiming
   CLASS_NOT_FOUND: 'This class link is not valid. Ask your class rep for the correct link.',
@@ -75,7 +78,7 @@ const MESSAGES: Record<string, string | MessageFor> = {
   NOT_AUTHENTICATED: 'Your session has expired. Please sign in again.',
   NETWORK: 'No connection to Supabase. Check your internet and verify VITE_SUPABASE_URL is correct.',
   DUPLICATE: 'That record already exists.',
-  PERMISSION: 'You do not have permission to do that.',
+  PERMISSION: 'You do not have permission to do that. Re-run supabase/migrations/0001_init.sql if setting up for the first time.',
   CONFIG: 'The app is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.',
   UNKNOWN: 'Something went wrong. Please try again.',
 };
@@ -98,7 +101,7 @@ interface PgLikeError {
 }
 
 function isPgLike(e: unknown): e is PgLikeError {
-  return typeof e === 'object' && e !== null && ('message' in e || 'code' in e);
+  return typeof e === 'object' && e !== null && ('message' in e || 'code' in e || 'status' in e);
 }
 
 /** Converts anything thrown into an AppError. Never throws. */
@@ -120,6 +123,14 @@ export function toAppError(e: unknown): AppError {
       return appError('SIGNUP_NOT_ALLOWED');
     }
     if (
+      e.status === 503 ||
+      e.status === 504 ||
+      e.name === 'AuthRetryableFetchError' ||
+      /error sending (confirmation|recovery) email|503|service unavailable/i.test(raw)
+    ) {
+      return appError('EMAIL_SERVICE_503');
+    }
+    if (
       e.code === 'PGRST202' ||
       e.code === 'PGRST205' ||
       e.code === '42P01' ||
@@ -135,15 +146,15 @@ export function toAppError(e: unknown): AppError {
       return appError('INVALID_API_KEY');
     }
 
+    // Auth errors from Supabase are already human readable — check BEFORE status === 403!
+    if (e.name === 'AuthApiError' || e.name === 'AuthWeakPasswordError') {
+      return new AppError('AUTH', raw || messageFor('UNKNOWN'));
+    }
+
     if (e.code === '23505') return appError('DUPLICATE');
     if (e.code === '42501' || e.status === 403) return appError('PERMISSION');
     if (e.status === 401 || /jwt|refresh token/i.test(raw)) return appError('NOT_AUTHENTICATED');
     if (/failed to fetch|network/i.test(raw)) return appError('NETWORK');
-
-    // Auth errors from Supabase are already human readable.
-    if (e.name === 'AuthApiError' || e.name === 'AuthWeakPasswordError') {
-      return new AppError('AUTH', raw || messageFor('UNKNOWN'));
-    }
 
     if (raw) {
       console.error('[unmapped error]', e);

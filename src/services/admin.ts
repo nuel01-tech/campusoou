@@ -14,13 +14,12 @@ export async function listReps(): Promise<RepSummary[]> {
 }
 
 /**
- * Creates a Class Rep account as the Super Admin:
- * 1. Calls `pre_authorize_rep(email, full_name)` so the DB gatekeeper allows
- *    this email to register and knows their name.
- * 2. Uses a non-persisting Supabase client to run `auth.signUp({ email, password })`
- *    so the Super Admin's browser session is never touched.
- * 3. The database trigger auto-confirms `email_confirmed_at` and creates the
- *    `public.profiles` row with `role = 'rep'`.
+ * Creates a Class Rep account as the Super Admin.
+ *
+ * Uses the `admin_create_rep` database RPC first (creates the user directly
+ * inside Postgres without triggering SMTP confirmation emails or 503 errors).
+ * Falls back to `pre_authorize_rep` + isolated `auth.signUp` only if the latest
+ * SQL migration has not been applied yet.
  */
 export async function createRepAccount(input: {
   full_name: string;
@@ -29,6 +28,19 @@ export async function createRepAccount(input: {
 }): Promise<void> {
   const email = input.email.trim().toLowerCase();
   const full_name = input.full_name.trim();
+
+  const { error: rpcErr } = await supabase.rpc('admin_create_rep', {
+    p_full_name: full_name,
+    p_email: email,
+    p_password: input.password,
+  });
+
+  if (!rpcErr) return;
+
+  const mapped = toAppError(rpcErr);
+  if (mapped.code !== 'DB_NOT_MIGRATED') {
+    throw mapped;
+  }
 
   check(await supabase.rpc('pre_authorize_rep', { p_email: email, p_full_name: full_name }));
 

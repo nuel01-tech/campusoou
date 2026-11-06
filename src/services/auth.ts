@@ -55,7 +55,7 @@ export async function signInStaff(
     if (/email not confirmed/i.test(error.message)) {
       throw new AppError(
         'AUTH',
-        'Your email is not confirmed yet. In Supabase Dashboard → Authentication → Providers → Email, turn off "Confirm email" or re-run 0001_init.sql.',
+        'Your email is not confirmed yet. Re-run supabase/migrations/0001_init.sql in your Supabase SQL Editor (it automatically confirms existing accounts).',
       );
     }
     throw toAppError(error);
@@ -93,8 +93,10 @@ export async function signInStaff(
 
 /**
  * Bootstraps the very first Super Admin account.
- * Once a Super Admin exists in `public.profiles`, the database trigger blocks
- * any further self-signups (`SIGNUP_NOT_ALLOWED`).
+ *
+ * Uses the `bootstrap_super_admin` database RPC first so account creation
+ * happens directly inside Postgres (zero SMTP / 503 timeouts), then signs the
+ * Super Admin in with `signInWithPassword`.
  */
 export async function bootstrapSuperAdmin(fullName: string, email: string, password: string): Promise<Profile> {
   const cleanEmail = email.trim().toLowerCase();
@@ -106,6 +108,32 @@ export async function bootstrapSuperAdmin(fullName: string, email: string, passw
     await supabase.auth.signOut().catch(() => {});
   }
 
+  // Primary path: direct server-side creation via `bootstrap_super_admin` RPC (no SMTP / 503).
+  const { error: rpcErr } = await supabase.rpc('bootstrap_super_admin', {
+    p_full_name: cleanName,
+    p_email: cleanEmail,
+    p_password: password,
+  });
+
+  if (!rpcErr) {
+    return signInStaff(cleanEmail, password, 'super_admin');
+  }
+
+  const mappedRpcErr = toAppError(rpcErr);
+  // If the RPC exists and rejected the call (e.g. SIGNUP_NOT_ALLOWED), surface that error unless
+  // the user is trying to sign in with the existing Super Admin credentials.
+  if (mappedRpcErr.code === 'SIGNUP_NOT_ALLOWED') {
+    try {
+      return await signInStaff(cleanEmail, password, 'super_admin');
+    } catch {
+      throw mappedRpcErr;
+    }
+  }
+  if (mappedRpcErr.code !== 'DB_NOT_MIGRATED') {
+    throw mappedRpcErr;
+  }
+
+  // Fallback path if the user has not re-run the latest 0001_init.sql with `bootstrap_super_admin` yet:
   const { data, error } = await supabase.auth.signUp({
     email: cleanEmail,
     password,
@@ -117,14 +145,11 @@ export async function bootstrapSuperAdmin(fullName: string, email: string, passw
       throw appError('SIGNUP_NOT_ALLOWED');
     }
     if (/already registered/i.test(error.message)) {
-      // If the user already registered in auth.users, try signing them in and ensuring their profile.
       return signInStaff(cleanEmail, password, 'super_admin');
     }
     throw toAppError(error);
   }
 
-  // If Supabase did not return an active session (e.g. "Confirm email" was toggled on in dashboard),
-  // our trigger already set `email_confirmed_at = now()`, so we can sign in immediately.
   if (!data.session) {
     return signInStaff(cleanEmail, password, 'super_admin');
   }

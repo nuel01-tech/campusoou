@@ -5,7 +5,7 @@
 --
 -- Roles & account model
 --   * Super Admin: the master account created during initial setup. Only the
---     Super Admin can create, suspend, or remove Class Rep accounts.
+--     Super Admin can create, suspend, reset passwords for, or remove Class Reps.
 --   * Class Rep: created by the Super Admin. Signs in with email + password,
 --     imports student rosters, runs GPS sessions, and exports attendance.
 --   * Student: signs in anonymously and claims a roster row. The claim binds
@@ -103,143 +103,6 @@ create table if not exists public.authorized_reps (
   created_at  timestamptz not null default now()
 );
 
-create or replace function public.is_super_admin()
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1 from profiles
-    where id = auth.uid() and role = 'super_admin' and active = true
-  );
-$$;
-
-create or replace function public.is_active_rep()
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1 from profiles
-    where id = auth.uid() and role in ('rep', 'super_admin') and active = true
-  );
-$$;
-
--- Gatekeeper on auth.users:
---   1. Anonymous sign-ins (students) are always allowed.
---   2. If no super_admin exists yet, the very first email/password sign-up is
---      allowed and auto-confirmed as the Super Admin.
---   3. After that, email/password sign-ups are ONLY allowed if the Super Admin
---      pre-authorized the email in `public.authorized_reps`.
-create or replace function public.handle_before_user_created()
-returns trigger
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  v_email text := lower(trim(coalesce(new.email, '')));
-begin
-  if coalesce(new.is_anonymous, false) = true then
-    return new;
-  end if;
-
-  if not exists (select 1 from public.profiles where role = 'super_admin') then
-    new.email_confirmed_at := coalesce(new.email_confirmed_at, now());
-    return new;
-  end if;
-
-  if exists (select 1 from public.authorized_reps where email = v_email) then
-    new.email_confirmed_at := coalesce(new.email_confirmed_at, now());
-    return new;
-  end if;
-
-  raise exception 'SIGNUP_NOT_ALLOWED';
-end;
-$$;
-
-drop trigger if exists on_auth_user_before_created on auth.users;
-create trigger on_auth_user_before_created
-before insert on auth.users
-for each row execute function public.handle_before_user_created();
-
-create or replace function public.handle_after_user_created()
-returns trigger
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  v_email text := lower(trim(coalesce(new.email, '')));
-  v_auth  public.authorized_reps;
-  v_name  text;
-begin
-  if coalesce(new.is_anonymous, false) = true then
-    return new;
-  end if;
-
-  if not exists (select 1 from public.profiles where role = 'super_admin') then
-    v_name := coalesce(nullif(trim(new.raw_user_meta_data ->> 'full_name'), ''), split_part(v_email, '@', 1));
-    if char_length(v_name) < 2 then
-      v_name := 'Super Admin';
-    end if;
-    insert into public.profiles (id, email, full_name, role)
-    values (new.id, v_email, v_name, 'super_admin')
-    on conflict (id) do nothing;
-    return new;
-  end if;
-
-  select * into v_auth from public.authorized_reps where email = v_email;
-  if found then
-    insert into public.profiles (id, email, full_name, role)
-    values (new.id, v_email, v_auth.full_name, 'rep')
-    on conflict (id) do nothing;
-    delete from public.authorized_reps where email = v_email;
-  end if;
-
-  return new;
-end;
-$$;
-
-drop trigger if exists on_auth_user_after_created on auth.users;
-create trigger on_auth_user_after_created
-after insert on auth.users
-for each row execute function public.handle_after_user_created();
-
--- Backfill: if an email/password user was created before this migration ran and
--- no super_admin exists yet, promote that user to super_admin automatically.
-do $$
-declare
-  v_first record;
-begin
-  if not exists (select 1 from public.profiles where role = 'super_admin') then
-    select id, lower(trim(email)) as email, raw_user_meta_data
-      into v_first
-      from auth.users
-     where coalesce(is_anonymous, false) = false
-       and email is not null
-     order by created_at asc
-     limit 1;
-
-    if found then
-      update auth.users set email_confirmed_at = coalesce(email_confirmed_at, now()) where id = v_first.id;
-      insert into public.profiles (id, email, full_name, role)
-      values (
-        v_first.id,
-        v_first.email,
-        coalesce(nullif(trim(v_first.raw_user_meta_data ->> 'full_name'), ''), split_part(v_first.email, '@', 1), 'Super Admin'),
-        'super_admin'
-      )
-      on conflict (id) do update set role = 'super_admin', active = true;
-    end if;
-  end if;
-end;
-$$;
-
 -- -----------------------------------------------------------------------------
 -- Domain Tables
 -- -----------------------------------------------------------------------------
@@ -296,7 +159,315 @@ create table if not exists public.attendance (
 );
 create index if not exists attendance_student_idx on public.attendance (student_id);
 
--- Keep stored values normalised regardless of how the client sends them.
+-- -----------------------------------------------------------------------------
+-- Role & Ownership Helpers
+-- -----------------------------------------------------------------------------
+
+create or replace function public.is_super_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from profiles
+    where id = auth.uid() and role = 'super_admin' and active = true
+  );
+$$;
+
+create or replace function public.is_active_rep()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from profiles
+    where id = auth.uid() and role in ('rep', 'super_admin') and active = true
+  );
+$$;
+
+create or replace function public.is_class_owner(p_class_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.is_active_rep()
+     and exists (select 1 from classes where id = p_class_id and owner_id = auth.uid());
+$$;
+
+create or replace function public.my_student_class_id()
+returns uuid
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select class_id from students where user_id = auth.uid() limit 1;
+$$;
+
+-- True only when a Super Admin exists AND has either signed in at least once or
+-- created classes/reps. If a previous signup attempt failed halfway (e.g. 503
+-- email timeout) and never signed in, this returns false so first-time setup
+-- can be completed cleanly.
+create or replace function public.has_super_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, auth
+as $$
+  select exists (
+    select 1
+      from public.profiles p
+      join auth.users u on u.id = p.id
+     where p.role = 'super_admin'
+       and (
+         u.last_sign_in_at is not null
+         or exists (select 1 from public.profiles r where r.role = 'rep')
+         or exists (select 1 from public.classes)
+       )
+  );
+$$;
+
+-- -----------------------------------------------------------------------------
+-- Gatekeeper triggers on auth.users
+-- -----------------------------------------------------------------------------
+
+create or replace function public.handle_before_user_created()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  v_email text := lower(trim(coalesce(new.email, '')));
+begin
+  if coalesce(new.is_anonymous, false) = true then
+    return new;
+  end if;
+
+  -- Allow if this user is being created while no active super_admin has completed setup,
+  -- or if the email was pre-authorized by the Super Admin.
+  if not public.has_super_admin() or exists (select 1 from public.authorized_reps where email = v_email) then
+    new.email_confirmed_at := coalesce(new.email_confirmed_at, now());
+    return new;
+  end if;
+
+  raise exception 'SIGNUP_NOT_ALLOWED';
+end;
+$$;
+
+drop trigger if exists on_auth_user_before_created on auth.users;
+create trigger on_auth_user_before_created
+before insert on auth.users
+for each row execute function public.handle_before_user_created();
+
+create or replace function public.handle_after_user_created()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  v_email text := lower(trim(coalesce(new.email, '')));
+  v_auth  public.authorized_reps;
+  v_name  text;
+begin
+  if coalesce(new.is_anonymous, false) = true then
+    return new;
+  end if;
+
+  select * into v_auth from public.authorized_reps where email = v_email;
+  if found then
+    insert into public.profiles (id, email, full_name, role, active)
+    values (new.id, v_email, v_auth.full_name, 'rep', true)
+    on conflict (id) do update
+      set email = excluded.email,
+          full_name = excluded.full_name,
+          role = 'rep';
+    delete from public.authorized_reps where email = v_email;
+    return new;
+  end if;
+
+  if not public.has_super_admin() then
+    v_name := coalesce(nullif(trim(new.raw_user_meta_data ->> 'full_name'), ''), split_part(v_email, '@', 1));
+    if char_length(v_name) < 2 then
+      v_name := 'Super Admin';
+    end if;
+    -- Remove any unverified/never-used super_admin placeholder before inserting
+    delete from public.profiles where role = 'super_admin' and id <> new.id;
+    insert into public.profiles (id, email, full_name, role, active)
+    values (new.id, v_email, v_name, 'super_admin', true)
+    on conflict (id) do update
+      set email = excluded.email,
+          full_name = excluded.full_name,
+          role = 'super_admin',
+          active = true;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_after_created on auth.users;
+create trigger on_auth_user_after_created
+after insert on auth.users
+for each row execute function public.handle_after_user_created();
+
+-- -----------------------------------------------------------------------------
+-- Internal helper: create or update an email/password user directly in auth.users
+-- without triggering GoTrue's rate-limited SMTP confirmation email sender.
+-- -----------------------------------------------------------------------------
+
+create or replace function public.upsert_auth_user(
+  p_email     text,
+  p_password  text,
+  p_full_name text
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public, auth, extensions
+as $$
+declare
+  v_email text := lower(trim(coalesce(p_email, '')));
+  v_name  text := regexp_replace(trim(coalesce(p_full_name, '')), '\s+', ' ', 'g');
+  v_uid   uuid;
+begin
+  if v_email = '' or position('@' in v_email) = 0 then
+    raise exception 'INVALID_EMAIL';
+  end if;
+  if char_length(v_name) < 2 then
+    raise exception 'INVALID_NAME';
+  end if;
+  if char_length(coalesce(p_password, '')) < 8 then
+    raise exception 'WEAK_PASSWORD';
+  end if;
+
+  select id into v_uid
+    from auth.users
+   where lower(email) = v_email
+     and coalesce(is_anonymous, false) = false
+   limit 1;
+
+  if v_uid is not null then
+    update auth.users
+       set encrypted_password     = crypt(p_password, gen_salt('bf')),
+           email_confirmed_at     = coalesce(email_confirmed_at, now()),
+           raw_app_meta_data      = coalesce(raw_app_meta_data, '{"provider":"email","providers":["email"]}'::jsonb),
+           raw_user_meta_data     = coalesce(raw_user_meta_data, '{}'::jsonb) || jsonb_build_object(
+                                      'sub', v_uid::text,
+                                      'email', v_email,
+                                      'full_name', v_name,
+                                      'email_verified', true,
+                                      'phone_verified', false
+                                    ),
+           confirmation_token     = coalesce(confirmation_token, ''),
+           recovery_token         = coalesce(recovery_token, ''),
+           email_change_token_new = coalesce(email_change_token_new, ''),
+           email_change           = coalesce(email_change, ''),
+           updated_at             = now()
+     where id = v_uid;
+  else
+    v_uid := gen_random_uuid();
+    insert into auth.users (
+      instance_id,
+      id,
+      aud,
+      role,
+      email,
+      encrypted_password,
+      email_confirmed_at,
+      raw_app_meta_data,
+      raw_user_meta_data,
+      is_super_admin,
+      created_at,
+      updated_at,
+      confirmation_token,
+      email_change,
+      email_change_token_new,
+      recovery_token,
+      is_sso_user,
+      is_anonymous
+    ) values (
+      '00000000-0000-0000-0000-000000000000',
+      v_uid,
+      'authenticated',
+      'authenticated',
+      v_email,
+      crypt(p_password, gen_salt('bf')),
+      now(),
+      '{"provider":"email","providers":["email"]}'::jsonb,
+      jsonb_build_object(
+        'sub', v_uid::text,
+        'email', v_email,
+        'full_name', v_name,
+        'email_verified', true,
+        'phone_verified', false
+      ),
+      false,
+      now(),
+      now(),
+      '',
+      '',
+      '',
+      '',
+      false,
+      false
+    );
+  end if;
+
+  if not exists (select 1 from auth.identities where user_id = v_uid and provider = 'email') then
+    insert into auth.identities (
+      id,
+      user_id,
+      provider_id,
+      identity_data,
+      provider,
+      last_sign_in_at,
+      created_at,
+      updated_at
+    ) values (
+      gen_random_uuid(),
+      v_uid,
+      v_uid::text,
+      jsonb_build_object(
+        'sub', v_uid::text,
+        'email', v_email,
+        'email_verified', true,
+        'phone_verified', false
+      ),
+      'email',
+      now(),
+      now(),
+      now()
+    );
+  end if;
+
+  return v_uid;
+end;
+$$;
+
+revoke all on function public.upsert_auth_user(text, text, text) from public, anon, authenticated;
+
+-- Repair any existing auth.users rows that were left unconfirmed or with null tokens
+update auth.users
+   set email_confirmed_at     = coalesce(email_confirmed_at, now()),
+       confirmation_token     = coalesce(confirmation_token, ''),
+       recovery_token         = coalesce(recovery_token, ''),
+       email_change_token_new = coalesce(email_change_token_new, ''),
+       email_change           = coalesce(email_change, '')
+ where coalesce(is_anonymous, false) = false;
+
+-- -----------------------------------------------------------------------------
+-- Normalisation triggers on students & sessions
+-- -----------------------------------------------------------------------------
+
 create or replace function public.students_normalize()
 returns trigger
 language plpgsql
@@ -328,31 +499,6 @@ drop trigger if exists sessions_normalize_trg on public.sessions;
 create trigger sessions_normalize_trg
 before insert or update of course_code, venue on public.sessions
 for each row execute function public.sessions_normalize();
-
--- -----------------------------------------------------------------------------
--- Ownership helpers (SECURITY DEFINER avoids recursive RLS evaluation)
--- -----------------------------------------------------------------------------
-
-create or replace function public.is_class_owner(p_class_id uuid)
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select public.is_active_rep()
-     and exists (select 1 from classes where id = p_class_id and owner_id = auth.uid());
-$$;
-
-create or replace function public.my_student_class_id()
-returns uuid
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select class_id from students where user_id = auth.uid() limit 1;
-$$;
 
 -- -----------------------------------------------------------------------------
 -- Row level security
@@ -436,22 +582,48 @@ create policy attendance_self_read on public.attendance
   using (exists (select 1 from students st where st.id = student_id and st.user_id = auth.uid()));
 
 -- -----------------------------------------------------------------------------
--- RPC: Super Admin management & setup
+-- RPC: Super Admin bootstrap & management
 -- -----------------------------------------------------------------------------
 
-create or replace function public.has_super_admin()
-returns boolean
-language sql
-stable
+-- Direct server-side Super Admin creation (never triggers SMTP / 503 errors).
+create or replace function public.bootstrap_super_admin(
+  p_full_name text,
+  p_email     text,
+  p_password  text
+)
+returns public.profiles
+language plpgsql
 security definer
-set search_path = public
+set search_path = public, auth, extensions
 as $$
-  select exists (select 1 from profiles where role = 'super_admin');
+declare
+  v_email text := lower(trim(coalesce(p_email, '')));
+  v_name  text := regexp_replace(trim(coalesce(p_full_name, '')), '\s+', ' ', 'g');
+  v_uid   uuid;
+  v_row   public.profiles;
+begin
+  if public.has_super_admin() then
+    raise exception 'SIGNUP_NOT_ALLOWED';
+  end if;
+
+  -- Clean up any never-used super_admin placeholder from an earlier interrupted attempt
+  delete from public.profiles where role = 'super_admin';
+
+  v_uid := public.upsert_auth_user(v_email, p_password, v_name);
+
+  insert into public.profiles (id, email, full_name, role, active)
+  values (v_uid, v_email, v_name, 'super_admin', true)
+  on conflict (id) do update
+    set email     = excluded.email,
+        full_name = excluded.full_name,
+        role      = 'super_admin',
+        active    = true
+  returning * into v_row;
+
+  return v_row;
+end;
 $$;
 
--- If no super_admin exists in profiles yet, promotes the currently signed-in
--- non-anonymous user to super_admin. Safe recovery if a user was created before
--- the trigger existed.
 create or replace function public.ensure_first_super_admin(p_full_name text default null)
 returns public.profiles
 language plpgsql
@@ -473,7 +645,7 @@ begin
     return v_row;
   end if;
 
-  if exists (select 1 from public.profiles where role = 'super_admin') then
+  if public.has_super_admin() then
     raise exception 'SIGNUP_NOT_ALLOWED';
   end if;
 
@@ -487,10 +659,57 @@ begin
     v_name := 'Super Admin';
   end if;
 
+  delete from public.profiles where role = 'super_admin' and id <> v_uid;
+
   insert into public.profiles (id, email, full_name, role, active)
   values (v_uid, v_email, v_name, 'super_admin', true)
   returning * into v_row;
 
+  return v_row;
+end;
+$$;
+
+-- Direct server-side Class Rep creation by Super Admin (no SMTP / 503 errors).
+create or replace function public.admin_create_rep(
+  p_full_name text,
+  p_email     text,
+  p_password  text
+)
+returns public.profiles
+language plpgsql
+security definer
+set search_path = public, auth, extensions
+as $$
+declare
+  v_email text := lower(trim(coalesce(p_email, '')));
+  v_name  text := regexp_replace(trim(coalesce(p_full_name, '')), '\s+', ' ', 'g');
+  v_uid   uuid;
+  v_row   public.profiles;
+begin
+  if not public.is_super_admin() then
+    raise exception 'PERMISSION';
+  end if;
+
+  if exists (select 1 from public.profiles where email = v_email) then
+    raise exception 'REP_EXISTS';
+  end if;
+
+  insert into public.authorized_reps (email, full_name, created_by)
+  values (v_email, v_name, auth.uid())
+  on conflict (email) do update set full_name = excluded.full_name;
+
+  v_uid := public.upsert_auth_user(v_email, p_password, v_name);
+
+  insert into public.profiles (id, email, full_name, role, active)
+  values (v_uid, v_email, v_name, 'rep', true)
+  on conflict (id) do update
+    set email     = excluded.email,
+        full_name = excluded.full_name,
+        role      = 'rep',
+        active    = true
+  returning * into v_row;
+
+  delete from public.authorized_reps where email = v_email;
   return v_row;
 end;
 $$;
@@ -779,20 +998,31 @@ $$;
 -- Grants
 -- -----------------------------------------------------------------------------
 
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on table public.profiles to authenticated;
+grant select, insert, update, delete on table public.authorized_reps to authenticated;
+grant select, insert, update, delete on table public.classes to authenticated;
+grant select, insert, update, delete on table public.students to authenticated;
+grant select, insert, update, delete on table public.sessions to authenticated;
+grant select, insert, update, delete on table public.attendance to authenticated;
+
 revoke all on function public.claim_student(text, text, text) from public, anon;
 revoke all on function public.check_in(uuid, float8, float8, float8) from public, anon;
 revoke all on function public.pre_authorize_rep(text, text) from public, anon;
+revoke all on function public.admin_create_rep(text, text, text) from public, anon;
 revoke all on function public.list_reps() from public, anon;
 revoke all on function public.set_rep_active(uuid, boolean) from public, anon;
 revoke all on function public.delete_rep(uuid) from public, anon;
 
 grant execute on function public.ping() to anon, authenticated;
 grant execute on function public.has_super_admin() to anon, authenticated;
+grant execute on function public.bootstrap_super_admin(text, text, text) to anon, authenticated;
 grant execute on function public.ensure_first_super_admin(text) to authenticated;
 grant execute on function public.get_class_by_code(text) to anon, authenticated;
 grant execute on function public.claim_student(text, text, text) to authenticated;
 grant execute on function public.check_in(uuid, float8, float8, float8) to authenticated;
 grant execute on function public.pre_authorize_rep(text, text) to authenticated;
+grant execute on function public.admin_create_rep(text, text, text) to authenticated;
 grant execute on function public.list_reps() to authenticated;
 grant execute on function public.set_rep_active(uuid, boolean) to authenticated;
 grant execute on function public.delete_rep(uuid) to authenticated;
