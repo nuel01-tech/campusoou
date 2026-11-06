@@ -24,13 +24,14 @@ import {
 } from '@/components/ui';
 import { toAppError } from '@/lib/errors';
 import { formatDate, pluralize } from '@/lib/format';
-import type { Department, RepSummary } from '@/types';
+import { ACADEMIC_LEVELS, type Department, type RepSummary } from '@/types';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 interface CreatedCredentials {
   full_name: string;
   department_name: string;
+  level: string;
   email: string;
   password: string;
 }
@@ -88,6 +89,7 @@ export default function AdminPage() {
     const text = [
       'CampusPulse — Class Rep Login',
       `Department: ${c.department_name}`,
+      `Level: ${c.level}`,
       `Link: ${window.location.origin}/rep/login`,
       `Email: ${c.email}`,
       `Password: ${c.password}`,
@@ -104,7 +106,7 @@ export default function AdminPage() {
     <div className="container stack-lg">
       <PageHeader
         title="Super Admin Dashboard"
-        subtitle="Create departments first, then assign each Class Rep to their department when creating their account."
+        subtitle="Create departments first, then assign each Class Rep to their department and level when creating their account."
         actions={
           !formVisible && (
             <Button
@@ -149,7 +151,7 @@ export default function AdminPage() {
         {created && (
           <Alert
             tone="success"
-            title={`Created account for ${created.full_name} (${created.department_name})`}
+            title={`Created account for ${created.full_name} (${created.department_name} · ${created.level})`}
             action={
               <Button size="sm" variant="secondary" onClick={() => copyCredentials(created)}>
                 Copy login details
@@ -158,7 +160,7 @@ export default function AdminPage() {
           >
             Send these details to the class rep — they can sign in immediately at{' '}
             <span className="mono">{window.location.origin}/rep/login</span>:<br />
-            Department: <strong>{created.department_name}</strong> · Email:{' '}
+            Department: <strong>{created.department_name}</strong> · Level: <strong>{created.level}</strong> · Email:{' '}
             <strong className="mono">{created.email}</strong> · Password:{' '}
             <strong className="mono">{created.password}</strong>
           </Alert>
@@ -172,7 +174,7 @@ export default function AdminPage() {
             onCreated={(creds) => {
               setCreated(creds);
               setShowForm(false);
-              toast(`Created class rep ${creds.full_name}`);
+              toast(`Created class rep ${creds.full_name} (${creds.level})`);
               void reps.reload({ silent: true });
               void departments.reload({ silent: true });
             }}
@@ -181,7 +183,7 @@ export default function AdminPage() {
 
         {list.length === 0 && !reps.error ? (
           <EmptyState title="No class reps yet">
-            Create a department above, then create a Class Rep account and choose their department.
+            Create a department above, then create a Class Rep account and choose their department and level.
           </EmptyState>
         ) : (
           list.length > 0 && (
@@ -191,6 +193,7 @@ export default function AdminPage() {
                   <tr>
                     <th>Name</th>
                     <th>Department</th>
+                    <th>Level</th>
                     <th>Email</th>
                     <th className="num">Classes</th>
                     <th className="num">Students</th>
@@ -214,6 +217,13 @@ export default function AdminPage() {
                             <Badge tone="neutral">{r.department_name}</Badge>
                           ) : (
                             <span className="muted small">Unassigned</span>
+                          )}
+                        </td>
+                        <td>
+                          {r.level ? (
+                            <Badge tone="ok">{r.level}</Badge>
+                          ) : (
+                            <span className="muted small">—</span>
                           )}
                         </td>
                         <td className="mono">{r.email}</td>
@@ -366,6 +376,7 @@ function NewRepForm({
 }) {
   const [fullName, setFullName] = useState('');
   const [departmentId, setDepartmentId] = useState(defaultDepartmentId || (departments[0]?.id ?? ''));
+  const [level, setLevel] = useState<string>('100L');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState(() => generatePassword());
   const [touched, setTouched] = useState(false);
@@ -385,6 +396,7 @@ function NewRepForm({
       full_name: fullName.trim(),
       department_id: departmentId || null,
       department_name: selectedDept?.name ?? 'Unassigned',
+      level: level.trim(),
       email: email.trim().toLowerCase(),
       password,
     };
@@ -393,6 +405,7 @@ function NewRepForm({
       email: clean.email,
       password: clean.password,
       department_id: clean.department_id,
+      level: clean.level,
     });
     return clean;
   });
@@ -404,6 +417,7 @@ function NewRepForm({
         ? 'Create a department in section 1 above first.'
         : 'Choose a department for this class rep.'
       : null;
+  const levelError = touched && !level ? 'Select a level for this class rep.' : null;
   const emailError = touched && !EMAIL_RE.test(email.trim()) ? 'Enter a valid email address.' : null;
   const passwordError = touched && password.length < 8 ? 'Password must be at least 8 characters.' : null;
 
@@ -413,6 +427,7 @@ function NewRepForm({
     if (
       fullName.trim().length < 2 ||
       !departmentId ||
+      !level ||
       !EMAIL_RE.test(email.trim()) ||
       password.length < 8
     ) {
@@ -425,15 +440,15 @@ function NewRepForm({
   return (
     <form onSubmit={submit} noValidate className="panel stack">
       <h2>2. Create Class Rep account</h2>
+      <TextField
+        label="Class rep full name"
+        value={fullName}
+        onChange={(e) => setFullName(e.target.value)}
+        placeholder="e.g. Chinedu Okafor"
+        error={nameError}
+        autoFocus
+      />
       <div className="grid-2">
-        <TextField
-          label="Class rep full name"
-          value={fullName}
-          onChange={(e) => setFullName(e.target.value)}
-          placeholder="e.g. Chinedu Okafor (300L)"
-          error={nameError}
-          autoFocus
-        />
         <SelectField
           label="Department"
           value={departmentId}
@@ -455,7 +470,23 @@ function NewRepForm({
             </option>
           ))}
         </SelectField>
+
+        <SelectField
+          label="Academic Level"
+          value={level}
+          onChange={(e) => setLevel(e.target.value)}
+          error={levelError}
+          hint="Select the academic level (e.g. 100L, 200L)."
+        >
+          <option value="">Select a level…</option>
+          {ACADEMIC_LEVELS.map((lvl) => (
+            <option key={lvl} value={lvl}>
+              {lvl}
+            </option>
+          ))}
+        </SelectField>
       </div>
+
       <div className="grid-2">
         <TextField
           label="Email address"

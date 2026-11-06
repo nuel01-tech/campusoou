@@ -43,6 +43,7 @@ export async function listReps(): Promise<RepSummary[]> {
     ...r,
     department_id: r.department_id ?? null,
     department_name: r.department_name ?? null,
+    level: r.level ?? null,
     class_count: Number(r.class_count ?? 0),
     student_count: Number(r.student_count ?? 0),
   }));
@@ -61,16 +62,19 @@ export async function createRepAccount(input: {
   email: string;
   password: string;
   department_id: string | null;
+  level: string | null;
 }): Promise<void> {
   const email = input.email.trim().toLowerCase();
   const full_name = input.full_name.trim();
   const department_id = input.department_id || null;
+  const level = input.level?.trim() || null;
 
   const { error: rpcErr } = await supabase.rpc('admin_create_rep', {
     p_full_name: full_name,
     p_email: email,
     p_password: input.password,
     p_department_id: department_id,
+    p_level: level,
   });
 
   if (!rpcErr) return;
@@ -85,6 +89,7 @@ export async function createRepAccount(input: {
       p_email: email,
       p_full_name: full_name,
       p_department_id: department_id,
+      p_level: level,
     }),
   );
 

@@ -9,12 +9,23 @@ export interface Department {
   rep_count: number;
 }
 
+export const ACADEMIC_LEVELS = [
+  '100L',
+  '200L',
+  '300L',
+  '400L',
+  '500L',
+  '600L',
+  'Postgraduate (PG)',
+] as const;
+
 export interface Profile {
   id: string;
   email: string;
   full_name: string;
   role: StaffRole;
   department_id?: string | null;
+  level?: string | null;
   active: boolean;
   created_at: string;
 }
@@ -25,6 +36,7 @@ export interface RepSummary {
   full_name: string;
   department_id: string | null;
   department_name: string | null;
+  level: string | null;
   active: boolean;
   created_at: string;
   class_count: number;
