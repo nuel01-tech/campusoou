@@ -2,26 +2,36 @@ import { useMemo, useState, type FormEvent } from 'react';
 import { useAction, useAsync } from '@/hooks/useAsync';
 import { useToast } from '@/hooks/useToast';
 import { addStudent, deleteStudent, listStudents, resetClaim, setStudentSuspended } from '@/services/roster';
-import { Badge, Button, ConfirmButton, EmptyState, ErrorAlert, PageLoader, TextField } from '@/components/ui';
+import { Badge, Button, ConfirmButton, EmptyState, ErrorAlert, PageLoader, SelectField, TextField } from '@/components/ui';
+import { ProgressBar } from '@/components/saas';
 import { AppError, toAppError } from '@/lib/errors';
 import { pluralize } from '@/lib/format';
 import { RosterImport } from './RosterImport';
 import type { Student } from '@/types';
 
+type RosterFilter = 'all' | 'claimed' | 'unclaimed' | 'suspended';
+
 export function RosterTab({ classId }: { classId: string }) {
   const students = useAsync(() => listStudents(classId), [classId]);
   const toast = useToast();
   const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<RosterFilter>('all');
   const [mode, setMode] = useState<'none' | 'import' | 'add'>('none');
 
   const list = students.data ?? [];
   const claimed = list.filter((s) => s.user_id).length;
+  const suspendedCount = list.filter((s) => s.suspended).length;
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return list;
-    return list.filter((s) => s.full_name.toLowerCase().includes(q) || s.matric_no.toLowerCase().includes(q));
-  }, [list, query]);
+    return list.filter((s) => {
+      if (statusFilter === 'claimed' && !s.user_id) return false;
+      if (statusFilter === 'unclaimed' && s.user_id) return false;
+      if (statusFilter === 'suspended' && !s.suspended) return false;
+      if (!q) return true;
+      return s.full_name.toLowerCase().includes(q) || s.matric_no.toLowerCase().includes(q);
+    });
+  }, [list, query, statusFilter]);
 
   const replace = (updated: Student) =>
     students.setData((prev) => (prev ?? []).map((s) => (s.id === updated.id ? updated : s)));
@@ -59,22 +69,33 @@ export function RosterTab({ classId }: { classId: string }) {
 
   return (
     <div className="stack">
-      <div className="section-head">
-        <div>
-          <h2>Students</h2>
-          {list.length > 0 && (
-            <p className="muted small">
-              {pluralize(list.length, 'student')} · {claimed} claimed
-            </p>
+      <div className="panel stack">
+        <div className="section-head">
+          <div>
+            <h2>Student Roster & Phone Claims</h2>
+            {list.length > 0 && (
+              <p className="muted small">
+                {pluralize(list.length, 'student')} · {claimed} claimed ({list.length - claimed} unclaimed)
+              </p>
+            )}
+          </div>
+          {mode === 'none' && (
+            <div className="row">
+              <Button onClick={() => setMode('import')}>Import CSV / Excel</Button>
+              <Button variant="secondary" onClick={() => setMode('add')}>
+                + Add student
+              </Button>
+            </div>
           )}
         </div>
-        {mode === 'none' && (
-          <div className="row">
-            <Button onClick={() => setMode('import')}>Import list</Button>
-            <Button variant="secondary" onClick={() => setMode('add')}>
-              Add one
-            </Button>
-          </div>
+
+        {list.length > 0 && (
+          <ProgressBar
+            value={claimed}
+            max={list.length}
+            label={`Phone Claim Onboarding (${claimed} of ${list.length} students linked)`}
+            tone={claimed === list.length ? 'ok' : 'accent'}
+          />
         )}
       </div>
 
@@ -117,15 +138,27 @@ export function RosterTab({ classId }: { classId: string }) {
       )}
 
       {list.length > 0 && (
-        <>
-          <TextField
-            label="Search"
-            className="search"
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Name or matric number"
-          />
+        <div className="panel stack">
+          <div className="filter-bar">
+            <TextField
+              label="Search student"
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Name or matric number…"
+            />
+            <SelectField
+              label="Claim status"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as RosterFilter)}
+            >
+              <option value="all">All students ({list.length})</option>
+              <option value="claimed">Claimed phones ({claimed})</option>
+              <option value="unclaimed">Unclaimed ({list.length - claimed})</option>
+              <option value="suspended">Suspended ({suspendedCount})</option>
+            </SelectField>
+          </div>
+
           <div className="table-wrap">
             <table className="table">
               <thead>
@@ -142,7 +175,9 @@ export function RosterTab({ classId }: { classId: string }) {
                 {filtered.map((s) => (
                   <tr key={s.id}>
                     <td>
-                      <span className={s.suspended ? 'muted' : undefined}>{s.full_name}</span>
+                      <span className={s.suspended ? 'muted' : undefined}>
+                        <strong>{s.full_name}</strong>
+                      </span>
                     </td>
                     <td className="mono">{s.matric_no}</td>
                     <td>
@@ -151,7 +186,7 @@ export function RosterTab({ classId }: { classId: string }) {
                       ) : s.user_id ? (
                         <Badge tone="ok">Claimed</Badge>
                       ) : (
-                        <Badge tone="muted">Not yet</Badge>
+                        <Badge tone="muted">Unclaimed</Badge>
                       )}
                     </td>
                     <td className="actions-col">
@@ -176,14 +211,14 @@ export function RosterTab({ classId }: { classId: string }) {
                 {filtered.length === 0 && (
                   <tr>
                     <td colSpan={4} className="muted center">
-                      No match for “{query}”.
+                      No matching students found.
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
-        </>
+        </div>
       )}
     </div>
   );

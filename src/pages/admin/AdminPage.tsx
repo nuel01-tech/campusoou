@@ -1,4 +1,5 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAction, useAsync } from '@/hooks/useAsync';
 import { useToast } from '@/hooks/useToast';
 import {
@@ -22,11 +23,14 @@ import {
   SelectField,
   TextField,
 } from '@/components/ui';
+import { KpiStatGrid, VerticalTabs, type VerticalTabItem } from '@/components/saas';
 import { toAppError } from '@/lib/errors';
 import { formatDate, pluralize } from '@/lib/format';
 import { ACADEMIC_LEVELS, type Department, type RepSummary } from '@/types';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+type AdminTabKey = 'overview' | 'reps' | 'create' | 'departments';
 
 interface CreatedCredentials {
   full_name: string;
@@ -47,22 +51,80 @@ export default function AdminPage() {
   const reps = useAsync(listReps, []);
   const departments = useAsync(listDepartments, []);
   const toast = useToast();
-  const [showForm, setShowForm] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
   const [created, setCreated] = useState<CreatedCredentials | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [selectedDeptId, setSelectedDeptId] = useState<string>('');
+  const [search, setSearch] = useState('');
+  const [deptFilter, setDeptFilter] = useState('');
+  const [levelFilter, setLevelFilter] = useState('');
 
-  if (reps.loading || departments.loading) return <PageLoader />;
+  const rawTab = searchParams.get('tab') as AdminTabKey | null;
+  const activeTab: AdminTabKey =
+    rawTab && ['overview', 'reps', 'create', 'departments'].includes(rawTab)
+      ? rawTab
+      : 'overview';
+
+  const setTab = (tab: AdminTabKey) => {
+    setSearchParams({ tab });
+  };
 
   const list = reps.data ?? [];
   const deptList = departments.data ?? [];
-  const formVisible = showForm || list.length === 0;
+
+  const filteredReps = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return list.filter((r) => {
+      if (deptFilter && r.department_id !== deptFilter) return false;
+      if (levelFilter && r.level !== levelFilter) return false;
+      if (!q) return true;
+      return (
+        r.full_name.toLowerCase().includes(q) ||
+        r.email.toLowerCase().includes(q) ||
+        (r.department_name ?? '').toLowerCase().includes(q)
+      );
+    });
+  }, [list, search, deptFilter, levelFilter]);
+
+  if (reps.loading || departments.loading) return <PageLoader />;
+
+  const activeRepsCount = list.filter((r) => r.active).length;
+  const totalClassesCount = list.reduce((sum, r) => sum + r.class_count, 0);
+  const totalStudentsCount = list.reduce((sum, r) => sum + r.student_count, 0);
+
+  const tabItems: VerticalTabItem<AdminTabKey>[] = [
+    {
+      key: 'overview',
+      label: 'Executive Overview',
+      description: 'KPI metrics & department summary',
+    },
+    {
+      key: 'reps',
+      label: 'Class Rep Directory',
+      description: 'Search, filter & manage reps',
+      badge: list.length,
+    },
+    {
+      key: 'create',
+      label: 'Provision Class Rep',
+      description: 'Assign department, level & login',
+      badge: '+',
+    },
+    {
+      key: 'departments',
+      label: 'Departments Manager',
+      description: 'Add or remove departments',
+      badge: deptList.length,
+    },
+  ];
 
   const handleToggleActive = async (rep: RepSummary) => {
     setBusyId(rep.id);
     try {
       const updated = await setRepActive(rep.id, !rep.active);
-      reps.setData((prev) => (prev ?? []).map((r) => (r.id === rep.id ? { ...r, active: updated.active } : r)));
+      reps.setData((prev) =>
+        (prev ?? []).map((r) => (r.id === rep.id ? { ...r, active: updated.active } : r)),
+      );
       toast(updated.active ? `${rep.full_name} reactivated` : `${rep.full_name} suspended`);
     } catch (e) {
       toast(toAppError(e).message, 'error');
@@ -102,162 +164,409 @@ export default function AdminPage() {
     }
   };
 
+  const shareCredentialsWhatsApp = (c: CreatedCredentials) => {
+    const text = [
+      '*CampusPulse — Class Rep Account*',
+      `Name: ${c.full_name}`,
+      `Department: ${c.department_name} (${c.level})`,
+      `Sign-in Link: ${window.location.origin}/rep/login`,
+      `Email: ${c.email}`,
+      `Password: ${c.password}`,
+    ].join('\n');
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+  };
+
   return (
     <div className="container stack-lg">
       <PageHeader
-        title="Super Admin Dashboard"
-        subtitle="Create departments first, then assign each Class Rep to their department and level when creating their account."
+        title="Super Admin Control Center"
+        subtitle="Manage university departments, provision Class Rep accounts by level, and oversee attendance operations."
         actions={
-          !formVisible && (
+          <div className="row">
+            <Button variant="secondary" onClick={() => setTab('departments')}>
+              + Department
+            </Button>
             <Button
               onClick={() => {
                 setCreated(null);
-                setShowForm(true);
+                setTab('create');
               }}
             >
-              New class rep
+              + New Class Rep
             </Button>
-          )
+          </div>
         }
       />
 
-      <DepartmentsPanel
-        departments={deptList}
-        error={departments.error}
-        onRetry={() => departments.reload()}
-        onCreated={(dept) => {
-          departments.setData((prev) =>
-            [...(prev ?? []), dept].sort((a, b) => a.name.localeCompare(b.name)),
-          );
-          setSelectedDeptId(dept.id);
-          toast(`Added ${dept.name} department`);
-        }}
-        onDeleted={(dept) => {
-          departments.setData((prev) => (prev ?? []).filter((d) => d.id !== dept.id));
-          if (selectedDeptId === dept.id) setSelectedDeptId('');
-          void reps.reload({ silent: true });
-          toast(`Removed ${dept.name} department`);
-        }}
+      <KpiStatGrid
+        items={[
+          {
+            label: 'Total Class Reps',
+            value: list.length,
+            sublabel: `${activeRepsCount} active · ${list.length - activeRepsCount} suspended`,
+            tone: 'accent',
+          },
+          {
+            label: 'Departments',
+            value: deptList.length,
+            sublabel: 'Configured university departments',
+            tone: 'ok',
+          },
+          {
+            label: 'Active Classes',
+            value: totalClassesCount,
+            sublabel: 'Managed across all levels',
+            tone: 'default',
+          },
+          {
+            label: 'Enrolled Students',
+            value: totalStudentsCount,
+            sublabel: 'Total students on class rosters',
+            tone: 'default',
+          },
+        ]}
       />
 
-      <section className="stack">
-        <div className="section-head">
-          <h2>Class Rep Accounts</h2>
-          <span className="muted small">{pluralize(list.length, 'rep', 'reps')}</span>
-        </div>
-
-        <ErrorAlert error={reps.error} onRetry={() => reps.reload()} />
-
-        {created && (
-          <Alert
-            tone="success"
-            title={`Created account for ${created.full_name} (${created.department_name} · ${created.level})`}
-            action={
+      {created && (
+        <Alert
+          tone="success"
+          title={`Created account for ${created.full_name} (${created.department_name} · ${created.level})`}
+          action={
+            <div className="row">
               <Button size="sm" variant="secondary" onClick={() => copyCredentials(created)}>
-                Copy login details
+                Copy details
               </Button>
-            }
-          >
-            Send these details to the class rep — they can sign in immediately at{' '}
-            <span className="mono">{window.location.origin}/rep/login</span>:<br />
-            Department: <strong>{created.department_name}</strong> · Level: <strong>{created.level}</strong> · Email:{' '}
-            <strong className="mono">{created.email}</strong> · Password:{' '}
-            <strong className="mono">{created.password}</strong>
-          </Alert>
-        )}
-
-        {formVisible && (
-          <NewRepForm
-            departments={deptList}
-            defaultDepartmentId={selectedDeptId}
-            onCancel={list.length ? () => setShowForm(false) : undefined}
-            onCreated={(creds) => {
-              setCreated(creds);
-              setShowForm(false);
-              toast(`Created class rep ${creds.full_name} (${creds.level})`);
-              void reps.reload({ silent: true });
-              void departments.reload({ silent: true });
-            }}
-          />
-        )}
-
-        {list.length === 0 && !reps.error ? (
-          <EmptyState title="No class reps yet">
-            Create a department above, then create a Class Rep account and choose their department and level.
-          </EmptyState>
-        ) : (
-          list.length > 0 && (
-            <div className="table-wrap">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Department</th>
-                    <th>Level</th>
-                    <th>Email</th>
-                    <th className="num">Classes</th>
-                    <th className="num">Students</th>
-                    <th>Status</th>
-                    <th>Created</th>
-                    <th className="actions-col">
-                      <span className="sr-only">Actions</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {list.map((r) => {
-                    const busy = busyId === r.id;
-                    return (
-                      <tr key={r.id}>
-                        <td>
-                          <strong>{r.full_name}</strong>
-                        </td>
-                        <td>
-                          {r.department_name ? (
-                            <Badge tone="neutral">{r.department_name}</Badge>
-                          ) : (
-                            <span className="muted small">Unassigned</span>
-                          )}
-                        </td>
-                        <td>
-                          {r.level ? (
-                            <Badge tone="ok">{r.level}</Badge>
-                          ) : (
-                            <span className="muted small">—</span>
-                          )}
-                        </td>
-                        <td className="mono">{r.email}</td>
-                        <td className="num">{r.class_count}</td>
-                        <td className="num">{r.student_count}</td>
-                        <td>{r.active ? <Badge tone="ok">Active</Badge> : <Badge tone="muted">Suspended</Badge>}</td>
-                        <td className="nowrap muted">{formatDate(r.created_at)}</td>
-                        <td className="actions-col">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            loading={busy}
-                            onClick={() => handleToggleActive(r)}
-                          >
-                            {r.active ? 'Suspend' : 'Activate'}
-                          </Button>
-                          <ConfirmButton
-                            size="sm"
-                            loading={busy}
-                            onConfirm={() => handleDelete(r)}
-                            confirmText={`Delete ${pluralize(r.class_count, 'class', 'classes')}?`}
-                          >
-                            Delete
-                          </ConfirmButton>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              <Button size="sm" variant="ghost" onClick={() => shareCredentialsWhatsApp(created)}>
+                WhatsApp
+              </Button>
             </div>
-          )
-        )}
-      </section>
+          }
+        >
+          Send these details to the class rep — they can sign in immediately at{' '}
+          <span className="mono">{window.location.origin}/rep/login</span>:<br />
+          Department: <strong>{created.department_name}</strong> · Level: <strong>{created.level}</strong> · Email:{' '}
+          <strong className="mono">{created.email}</strong> · Password:{' '}
+          <strong className="mono">{created.password}</strong>
+        </Alert>
+      )}
+
+      <div className="vtabs-layout">
+        <aside className="vtabs-rail">
+          <VerticalTabs
+            items={tabItems}
+            activeKey={activeTab}
+            onSelect={setTab}
+            ariaLabel="Super Admin workspace tabs"
+          />
+        </aside>
+
+        <div className="vtabs-panel">
+          {activeTab === 'overview' && (
+            <div className="stack-lg">
+              <section className="panel stack">
+                <div className="section-head">
+                  <div>
+                    <h2>Department Coverage Matrix</h2>
+                    <p className="muted small">
+                      Breakdown of departments and assigned Class Representatives across levels.
+                    </p>
+                  </div>
+                  <Button size="sm" variant="secondary" onClick={() => setTab('departments')}>
+                    Manage departments
+                  </Button>
+                </div>
+
+                {deptList.length === 0 ? (
+                  <EmptyState
+                    title="No departments created yet"
+                    action={<Button onClick={() => setTab('departments')}>Create first department</Button>}
+                  >
+                    Start by adding your university departments (e.g. Computer Science, Microbiology, Economics) so you can assign Class Reps to them.
+                  </EmptyState>
+                ) : (
+                  <div className="table-wrap">
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>Department Name</th>
+                          <th className="num">Assigned Reps</th>
+                          <th>Created</th>
+                          <th className="actions-col">Quick Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {deptList.map((d) => (
+                          <tr key={d.id}>
+                            <td>
+                              <strong>{d.name}</strong>
+                            </td>
+                            <td className="num">
+                              <Badge tone={d.rep_count > 0 ? 'ok' : 'muted'}>
+                                {pluralize(d.rep_count, 'rep', 'reps')}
+                              </Badge>
+                            </td>
+                            <td className="muted nowrap">{formatDate(d.created_at)}</td>
+                            <td className="actions-col">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  setSelectedDeptId(d.id);
+                                  setTab('create');
+                                }}
+                              >
+                                + Add rep here
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+
+              <section className="panel stack">
+                <div className="section-head">
+                  <div>
+                    <h2>Recent Class Rep Accounts</h2>
+                    <p className="muted small">Latest provisioned Class Representatives.</p>
+                  </div>
+                  <div className="row">
+                    <Link to="/rep" className="btn btn-ghost btn-sm">
+                      <span>Open Classes Workspace →</span>
+                    </Link>
+                    <Button size="sm" variant="secondary" onClick={() => setTab('reps')}>
+                      View all ({list.length})
+                    </Button>
+                  </div>
+                </div>
+
+                {list.length === 0 ? (
+                  <p className="muted small">No Class Reps provisioned yet.</p>
+                ) : (
+                  <div className="table-wrap">
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>Name</th>
+                          <th>Department</th>
+                          <th>Level</th>
+                          <th>Status</th>
+                          <th className="num">Classes</th>
+                          <th className="num">Students</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {list.slice(0, 5).map((r) => (
+                          <tr key={r.id}>
+                            <td>
+                              <strong>{r.full_name}</strong>
+                            </td>
+                            <td>
+                              {r.department_name ? (
+                                <Badge tone="neutral">{r.department_name}</Badge>
+                              ) : (
+                                <span className="muted small">Unassigned</span>
+                              )}
+                            </td>
+                            <td>{r.level ? <Badge tone="ok">{r.level}</Badge> : '—'}</td>
+                            <td>
+                              {r.active ? <Badge tone="ok">Active</Badge> : <Badge tone="muted">Suspended</Badge>}
+                            </td>
+                            <td className="num">{r.class_count}</td>
+                            <td className="num">{r.student_count}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+            </div>
+          )}
+
+          {activeTab === 'reps' && (
+            <section className="panel stack">
+              <div className="section-head">
+                <div>
+                  <h2>Class Rep Directory</h2>
+                  <p className="muted small">
+                    Filter by department or level, suspend access, or remove accounts.
+                  </p>
+                </div>
+                <Button size="sm" onClick={() => setTab('create')}>
+                  + Provision rep
+                </Button>
+              </div>
+
+              <ErrorAlert error={reps.error} onRetry={() => reps.reload()} />
+
+              <div className="filter-bar">
+                <TextField
+                  label="Search rep"
+                  type="search"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Name, email, or department…"
+                />
+                <SelectField
+                  label="Filter by Department"
+                  value={deptFilter}
+                  onChange={(e) => setDeptFilter(e.target.value)}
+                >
+                  <option value="">All departments ({deptList.length})</option>
+                  {deptList.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </SelectField>
+                <SelectField
+                  label="Filter by Level"
+                  value={levelFilter}
+                  onChange={(e) => setLevelFilter(e.target.value)}
+                >
+                  <option value="">All levels</option>
+                  {ACADEMIC_LEVELS.map((lvl) => (
+                    <option key={lvl} value={lvl}>
+                      {lvl}
+                    </option>
+                  ))}
+                </SelectField>
+              </div>
+
+              {list.length === 0 && !reps.error ? (
+                <EmptyState
+                  title="No class reps yet"
+                  action={<Button onClick={() => setTab('create')}>Create first Class Rep</Button>}
+                >
+                  Provision an account for each department and level's Class Representative.
+                </EmptyState>
+              ) : (
+                <div className="table-wrap">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Department</th>
+                        <th>Level</th>
+                        <th>Email</th>
+                        <th className="num">Classes</th>
+                        <th className="num">Students</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                        <th className="actions-col">
+                          <span className="sr-only">Actions</span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredReps.map((r) => {
+                        const busy = busyId === r.id;
+                        return (
+                          <tr key={r.id}>
+                            <td>
+                              <strong>{r.full_name}</strong>
+                            </td>
+                            <td>
+                              {r.department_name ? (
+                                <Badge tone="neutral">{r.department_name}</Badge>
+                              ) : (
+                                <span className="muted small">Unassigned</span>
+                              )}
+                            </td>
+                            <td>
+                              {r.level ? (
+                                <Badge tone="ok">{r.level}</Badge>
+                              ) : (
+                                <span className="muted small">—</span>
+                              )}
+                            </td>
+                            <td className="mono">{r.email}</td>
+                            <td className="num">{r.class_count}</td>
+                            <td className="num">{r.student_count}</td>
+                            <td>
+                              {r.active ? (
+                                <Badge tone="ok">Active</Badge>
+                              ) : (
+                                <Badge tone="muted">Suspended</Badge>
+                              )}
+                            </td>
+                            <td className="nowrap muted">{formatDate(r.created_at)}</td>
+                            <td className="actions-col">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                loading={busy}
+                                onClick={() => handleToggleActive(r)}
+                              >
+                                {r.active ? 'Suspend' : 'Activate'}
+                              </Button>
+                              <ConfirmButton
+                                size="sm"
+                                loading={busy}
+                                onConfirm={() => handleDelete(r)}
+                                confirmText={`Delete ${pluralize(r.class_count, 'class', 'classes')}?`}
+                              >
+                                Delete
+                              </ConfirmButton>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {filteredReps.length === 0 && (
+                        <tr>
+                          <td colSpan={9} className="muted center">
+                            No Class Reps match your current filters.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          )}
+
+          {activeTab === 'create' && (
+            <NewRepForm
+              departments={deptList}
+              defaultDepartmentId={selectedDeptId}
+              onOpenDepartments={() => setTab('departments')}
+              onCancel={() => setTab('reps')}
+              onCreated={(creds) => {
+                setCreated(creds);
+                toast(`Created class rep ${creds.full_name} (${creds.level})`);
+                void reps.reload({ silent: true });
+                void departments.reload({ silent: true });
+                setTab('reps');
+              }}
+            />
+          )}
+
+          {activeTab === 'departments' && (
+            <DepartmentsPanel
+              departments={deptList}
+              error={departments.error}
+              onRetry={() => departments.reload()}
+              onCreated={(dept) => {
+                departments.setData((prev) =>
+                  [...(prev ?? []), dept].sort((a, b) => a.name.localeCompare(b.name)),
+                );
+                setSelectedDeptId(dept.id);
+                toast(`Added ${dept.name} department`);
+              }}
+              onDeleted={(dept) => {
+                departments.setData((prev) => (prev ?? []).filter((d) => d.id !== dept.id));
+                if (selectedDeptId === dept.id) setSelectedDeptId('');
+                void reps.reload({ silent: true });
+                toast(`Removed ${dept.name} department`);
+              }}
+            />
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -313,9 +622,9 @@ function DepartmentsPanel({
     <section className="panel stack">
       <div className="section-head">
         <div>
-          <h2>1. Departments</h2>
+          <h2>Departments Manager</h2>
           <p className="muted small">
-            Add departments here so you can select them when creating Class Rep accounts below.
+            Add departments here so you can select them when creating Class Rep accounts or classes.
           </p>
         </div>
         <span className="muted small">{pluralize(departments.length, 'department', 'departments')}</span>
@@ -329,8 +638,9 @@ function DepartmentsPanel({
           placeholder="e.g. Computer Science, Microbiology, Economics"
           error={nameError}
           maxLength={120}
+          autoFocus
         />
-        <Button type="submit" variant="secondary" loading={create.pending}>
+        <Button type="submit" variant="primary" loading={create.pending}>
           Add department
         </Button>
       </form>
@@ -338,9 +648,9 @@ function DepartmentsPanel({
       <ErrorAlert error={create.error ?? error} onRetry={error ? onRetry : undefined} />
 
       {departments.length === 0 ? (
-        <p className="muted small">
-          No departments created yet. Add your first department above (e.g. Computer Science) before creating a Class Rep.
-        </p>
+        <EmptyState title="No departments created yet">
+          Add your first department above (e.g. Computer Science) before creating a Class Rep.
+        </EmptyState>
       ) : (
         <ul className="dept-chips" aria-label="Departments">
           {departments.map((d) => (
@@ -366,16 +676,20 @@ function DepartmentsPanel({
 function NewRepForm({
   departments,
   defaultDepartmentId,
+  onOpenDepartments,
   onCancel,
   onCreated,
 }: {
   departments: Department[];
   defaultDepartmentId?: string;
+  onOpenDepartments: () => void;
   onCancel?: () => void;
   onCreated: (creds: CreatedCredentials) => void;
 }) {
   const [fullName, setFullName] = useState('');
-  const [departmentId, setDepartmentId] = useState(defaultDepartmentId || (departments[0]?.id ?? ''));
+  const [departmentId, setDepartmentId] = useState(
+    defaultDepartmentId || (departments[0]?.id ?? ''),
+  );
   const [level, setLevel] = useState<string>('100L');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState(() => generatePassword());
@@ -410,16 +724,19 @@ function NewRepForm({
     return clean;
   });
 
-  const nameError = touched && fullName.trim().length < 2 ? 'Enter the class rep’s full name.' : null;
+  const nameError =
+    touched && fullName.trim().length < 2 ? 'Enter the class rep’s full name.' : null;
   const deptError =
     touched && !departmentId
       ? departments.length === 0
-        ? 'Create a department in section 1 above first.'
+        ? 'Create a department in the Departments tab first.'
         : 'Choose a department for this class rep.'
       : null;
   const levelError = touched && !level ? 'Select a level for this class rep.' : null;
-  const emailError = touched && !EMAIL_RE.test(email.trim()) ? 'Enter a valid email address.' : null;
-  const passwordError = touched && password.length < 8 ? 'Password must be at least 8 characters.' : null;
+  const emailError =
+    touched && !EMAIL_RE.test(email.trim()) ? 'Enter a valid email address.' : null;
+  const passwordError =
+    touched && password.length < 8 ? 'Password must be at least 8 characters.' : null;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -439,7 +756,20 @@ function NewRepForm({
 
   return (
     <form onSubmit={submit} noValidate className="panel stack">
-      <h2>2. Create Class Rep account</h2>
+      <div className="section-head">
+        <div>
+          <h2>Provision Class Rep Account</h2>
+          <p className="muted small">
+            Assign the Class Rep to a department and academic level. Their account is confirmed immediately.
+          </p>
+        </div>
+        {departments.length === 0 && (
+          <Button type="button" size="sm" variant="secondary" onClick={onOpenDepartments}>
+            + Add Department First
+          </Button>
+        )}
+      </div>
+
       <TextField
         label="Class rep full name"
         value={fullName}
@@ -448,6 +778,7 @@ function NewRepForm({
         error={nameError}
         autoFocus
       />
+
       <div className="grid-2">
         <SelectField
           label="Department"
@@ -457,7 +788,7 @@ function NewRepForm({
           disabled={departments.length === 0}
           hint={
             departments.length === 0
-              ? 'Add a department in "1. Departments" above first.'
+              ? 'Open the Departments tab to add a department first.'
               : 'Select the department this class rep belongs to.'
           }
         >
@@ -507,15 +838,22 @@ function NewRepForm({
             hint="Share with the class rep — no email confirmation required."
             error={passwordError}
           />
-          <Button type="button" variant="secondary" size="md" onClick={() => setPassword(generatePassword())}>
+          <Button
+            type="button"
+            variant="secondary"
+            size="md"
+            onClick={() => setPassword(generatePassword())}
+          >
             Generate
           </Button>
         </div>
       </div>
+
       <ErrorAlert error={create.error} />
+
       <div className="row">
         <Button type="submit" loading={create.pending}>
-          Create class rep
+          Create class rep account
         </Button>
         {onCancel && (
           <Button type="button" variant="ghost" onClick={onCancel}>

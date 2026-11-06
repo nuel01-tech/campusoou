@@ -1199,3 +1199,732 @@ code,
   padding: 0.05rem 0.4rem;
   border-radius: 999px;
 }
+
+/* ==========================================================================
+   SaaS Vertical-Sidebar Application Layout & Vertical Tabs System
+   ========================================================================== */
+
+.saas-layout {
+  min-height: 100dvh;
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  background: var(--bg);
+}
+
+.saas-sidebar {
+  background: #14241c;
+  color: #edf1ee;
+  border-right: 1px solid #243c30;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+  z-index: 40;
+}
+
+.saas-sidebar-top {
+  padding: 1.1rem 1rem 0.85rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+  display: grid;
+  gap: 0.8rem;
+}
+
+.saas-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  text-decoration: none;
+  color: #ffffff;
+}
+
+.saas-brand:hover {
+  color: #ffffff;
+}
+
+.saas-brand-mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 7px;
+  background: #2b5943;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 750;
+  font-size: 0.84rem;
+  letter-spacing: 0.03em;
+  color: #f6f4ee;
+  flex-shrink: 0;
+}
+
+.saas-brand-text {
+  display: grid;
+  line-height: 1.2;
+}
+
+.saas-brand-name {
+  font-weight: 700;
+  font-size: 0.98rem;
+  letter-spacing: -0.01em;
+}
+
+.saas-brand-role {
+  font-size: 0.75rem;
+  color: #9cb2a6;
+}
+
+.saas-cmd-trigger {
+  width: 100%;
+  height: 2.2rem;
+  padding: 0 0.65rem;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: #bfd0c6;
+  font: inherit;
+  font-size: 0.83rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+}
+
+.saas-cmd-trigger:hover {
+  background: rgba(255, 255, 255, 0.11);
+  color: #ffffff;
+}
+
+.saas-cmd-trigger kbd {
+  font-family: var(--font-mono);
+  font-size: 0.73rem;
+  padding: 0.08rem 0.35rem;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.28);
+  color: #d6e2db;
+}
+
+.saas-sidebar-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.35rem;
+}
+
+.saas-nav-group {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.saas-nav-title {
+  padding: 0 0.6rem;
+  font-size: 0.69rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #829c8e;
+}
+
+.saas-vnav {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.saas-vnav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 6px;
+  font-size: 0.89rem;
+  font-weight: 550;
+  color: #c9d7cf;
+  text-decoration: none;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.saas-vnav-link:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #ffffff;
+}
+
+.saas-vnav-link.is-active {
+  background: #254837;
+  color: #ffffff;
+  font-weight: 650;
+  box-shadow: inset 3px 0 0 #6fd49c;
+}
+
+.saas-vnav-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.55;
+  flex-shrink: 0;
+}
+
+.saas-vnav-link.is-active .saas-vnav-dot {
+  background: #6fd49c;
+  opacity: 1;
+}
+
+.saas-vnav-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saas-vnav-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.05rem 0.42rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+}
+
+.saas-sidebar-footer {
+  padding: 0.85rem 0.9rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+  display: grid;
+  gap: 0.6rem;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.saas-user-card {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.saas-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #2b5943;
+  color: #ffffff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.saas-user-meta {
+  display: grid;
+  min-width: 0;
+}
+
+.saas-user-name {
+  font-size: 0.85rem;
+  color: #ffffff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saas-user-sub {
+  font-size: 0.75rem;
+  color: #9cb2a6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saas-signout-btn {
+  width: 100%;
+  height: 2rem;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: transparent;
+  color: #d3dfd8;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.saas-signout-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+/* --- Workspace Column ----------------------------------------------------- */
+
+.saas-workspace {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+
+.saas-topbar {
+  height: 3.35rem;
+  padding: 0 1.5rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  position: sticky;
+  top: 0;
+  z-index: 25;
+}
+
+.saas-topbar-left,
+.saas-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.saas-breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.saas-menu-btn {
+  display: none;
+  height: 2rem;
+  padding: 0 0.65rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.saas-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--ok);
+  background: var(--ok-bg);
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+}
+
+.saas-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+
+.saas-main {
+  flex: 1;
+  padding: 1.6rem 0 3.5rem;
+}
+
+.saas-main > .container {
+  width: min(1160px, 100% - 2.5rem);
+}
+
+/* --- In-Page Vertical Tabs Layout (Master / Detail) ----------------------- */
+
+.vtabs-layout {
+  display: grid;
+  grid-template-columns: 235px minmax(0, 1fr);
+  gap: 1.35rem;
+  align-items: start;
+}
+
+.vtabs-rail {
+  position: sticky;
+  top: 4.5rem;
+}
+
+.vtabs {
+  display: grid;
+  gap: 0.35rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.45rem;
+}
+
+.vtab-item {
+  appearance: none;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  padding: 0.65rem 0.75rem;
+  font: inherit;
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.vtab-item:hover {
+  background: var(--surface-subtle);
+}
+
+.vtab-item.is-active {
+  background: var(--accent-soft);
+  border-color: #b7cfc1;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.vtab-content {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.vtab-label {
+  font-size: 0.9rem;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.vtab-item.is-active .vtab-label {
+  color: var(--accent);
+}
+
+.vtab-desc {
+  font-size: 0.76rem;
+  color: var(--ink-muted);
+  line-height: 1.3;
+}
+
+.vtab-badge {
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 0.08rem 0.45rem;
+  border-radius: 999px;
+  background: var(--surface-subtle);
+  color: var(--ink-muted);
+  flex-shrink: 0;
+}
+
+.vtab-badge.is-active {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.vtabs-panel {
+  min-width: 0;
+}
+
+/* --- KPI Stat Cards ------------------------------------------------------- */
+
+.kpi-grid {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(auto-fit, minmax(195px, 1fr));
+}
+
+.kpi-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.15rem;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.kpi-accent {
+  border-left: 3px solid var(--accent);
+}
+
+.kpi-ok {
+  border-left: 3px solid var(--ok);
+}
+
+.kpi-warn {
+  border-left: 3px solid var(--warn);
+}
+
+.kpi-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+}
+
+.kpi-value {
+  font-size: 1.55rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--ink);
+}
+
+.kpi-sub {
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+}
+
+/* --- Progress Bar --------------------------------------------------------- */
+
+.progress-wrap {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.progress-track {
+  width: 100%;
+  height: 8px;
+  background: var(--surface-subtle);
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 220ms ease;
+}
+
+.progress-accent {
+  background: var(--accent);
+}
+
+.progress-ok {
+  background: var(--ok);
+}
+
+.progress-warn {
+  background: var(--warn);
+}
+
+.progress-danger {
+  background: var(--danger);
+}
+
+/* --- Filter Bar & Class Cards Grid ---------------------------------------- */
+
+.filter-bar {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
+  padding: 0.85rem;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.class-cards-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+
+.class-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.1rem;
+  display: grid;
+  gap: 0.75rem;
+  transition: border-color 120ms ease;
+}
+
+.class-card:hover {
+  border-color: var(--border-strong);
+}
+
+.class-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.class-card-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.class-card-title:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.class-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+
+/* --- Command Palette (Ctrl+K) --------------------------------------------- */
+
+.cmd-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 20, 17, 0.52);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 10vh 1rem 1rem;
+  z-index: 80;
+}
+
+.cmd-modal {
+  width: min(540px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+}
+
+.cmd-search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.cmd-input {
+  flex: 1;
+  border: 0;
+  font: inherit;
+  font-size: 1rem;
+  color: var(--ink);
+  background: transparent;
+  outline: none;
+}
+
+.cmd-esc {
+  border: 1px solid var(--border);
+  background: var(--surface-subtle);
+  color: var(--ink-muted);
+  border-radius: 4px;
+  padding: 0.15rem 0.45rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.cmd-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.4rem;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.cmd-item {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 0.55rem 0.7rem;
+  border-radius: 5px;
+  font: inherit;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  cursor: pointer;
+}
+
+.cmd-item:hover {
+  background: var(--accent-soft);
+}
+
+.cmd-item-group {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-muted);
+}
+
+.cmd-item-label {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.cmd-item-hint {
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+}
+
+.cmd-empty {
+  padding: 1.25rem;
+  text-align: center;
+}
+
+/* --- Responsive Mobile SaaS Layout ---------------------------------------- */
+
+.saas-backdrop {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .saas-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .saas-sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 270px;
+    transform: translateX(-100%);
+    transition: transform 180ms ease;
+  }
+
+  .saas-sidebar.is-open {
+    transform: translateX(0);
+  }
+
+  .saas-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 35;
+  }
+
+  .saas-menu-btn {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .vtabs-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .vtabs-rail {
+    position: static;
+  }
+}

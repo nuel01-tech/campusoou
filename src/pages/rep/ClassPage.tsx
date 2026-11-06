@@ -1,25 +1,29 @@
-import { Link, NavLink, Navigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useAsync } from '@/hooks/useAsync';
 import { getClass } from '@/services/classes';
-import { ErrorAlert, PageHeader, PageLoader } from '@/components/ui';
+import { Badge, ErrorAlert, PageHeader, PageLoader } from '@/components/ui';
+import { VerticalTabs, type VerticalTabItem } from '@/components/saas';
 import { ShareClass } from '@/features/classes/ShareClass';
 import { SessionsTab } from '@/features/sessions/SessionsTab';
 import { RosterTab } from '@/features/roster/RosterTab';
+import { AnalyticsTab } from '@/features/analytics/AnalyticsTab';
 import { ExportTab } from '@/features/export/ExportTab';
 import { SettingsTab } from '@/features/classes/SettingsTab';
 import type { ClassRoom } from '@/types';
 
 const TABS = [
-  { key: 'sessions', label: 'Sessions' },
-  { key: 'students', label: 'Students' },
-  { key: 'export', label: 'Export' },
-  { key: 'settings', label: 'Settings' },
+  { key: 'sessions', label: 'Lecture Sessions', description: 'Start & monitor GPS roll-call' },
+  { key: 'students', label: 'Student Roster', description: 'Import list & manage phone claims' },
+  { key: 'analytics', label: '75% Eligibility & Stats', description: 'Attendance % & at-risk students' },
+  { key: 'export', label: 'Export Sheet', description: 'Download Excel / CSV matrix' },
+  { key: 'settings', label: 'Class Settings', description: 'Department, level & danger zone' },
 ] as const;
 
 type TabKey = (typeof TABS)[number]['key'];
 
 export default function ClassPage() {
   const { classId = '', tab = 'sessions' } = useParams();
+  const navigate = useNavigate();
   const klass = useAsync(() => getClass(classId), [classId]);
 
   if (!TABS.some((t) => t.key === tab)) return <Navigate to={`/rep/class/${classId}`} replace />;
@@ -35,41 +39,73 @@ export default function ClassPage() {
 
   const c = klass.data;
   const onUpdated = (updated: ClassRoom) => klass.setData(updated);
-  const meta = [c.department_name, c.level].filter(Boolean).join(' · ');
+  const activeKey = tab as TabKey;
+
+  const vtabItems: VerticalTabItem<TabKey>[] = TABS.map((t) => ({
+    key: t.key,
+    label: t.label,
+    description: t.description,
+  }));
+
+  const handleSelectTab = (key: TabKey) => {
+    navigate(key === 'sessions' ? `/rep/class/${c.id}` : `/rep/class/${c.id}/${key}`);
+  };
 
   return (
-    <div className="container">
+    <div className="container stack-lg">
       <PageHeader
         title={c.name}
-        subtitle={meta || undefined}
+        subtitle={
+          <span className="row" style={{ marginTop: '0.25rem', gap: '0.45rem' }}>
+            {c.department_name && <Badge tone="neutral">{c.department_name}</Badge>}
+            {c.level && <Badge tone="ok">{c.level}</Badge>}
+            <span className="mono muted small">Join Code: {c.join_code}</span>
+          </span>
+        }
         back={{ to: '/rep', label: 'All classes' }}
+        actions={
+          <Link to={`/rep/class/${c.id}/new-session`} className="btn btn-primary btn-md">
+            <span>+ Start GPS Session</span>
+          </Link>
+        }
       />
-      <ShareClass code={c.join_code} />
 
-      <nav className="tabs" aria-label="Class sections">
-        {TABS.map((t) => (
-          <NavLink
-            key={t.key}
-            to={t.key === 'sessions' ? `/rep/class/${c.id}` : `/rep/class/${c.id}/${t.key}`}
-            end
-            className={({ isActive }) => `tab ${isActive ? 'is-active' : ''}`}
-          >
-            {t.label}
-          </NavLink>
-        ))}
-      </nav>
+      <ShareClass code={c.join_code} classNameLabel={c.name} />
 
-      <TabContent tab={tab as TabKey} klass={c} onUpdated={onUpdated} />
+      <div className="vtabs-layout">
+        <aside className="vtabs-rail">
+          <VerticalTabs
+            items={vtabItems}
+            activeKey={activeKey}
+            onSelect={handleSelectTab}
+            ariaLabel="Class sections"
+          />
+        </aside>
+
+        <div className="vtabs-panel">
+          <TabContent tab={activeKey} klass={c} onUpdated={onUpdated} />
+        </div>
+      </div>
     </div>
   );
 }
 
-function TabContent({ tab, klass, onUpdated }: { tab: TabKey; klass: ClassRoom; onUpdated: (c: ClassRoom) => void }) {
+function TabContent({
+  tab,
+  klass,
+  onUpdated,
+}: {
+  tab: TabKey;
+  klass: ClassRoom;
+  onUpdated: (c: ClassRoom) => void;
+}) {
   switch (tab) {
     case 'sessions':
       return <SessionsTab klass={klass} />;
     case 'students':
       return <RosterTab classId={klass.id} />;
+    case 'analytics':
+      return <AnalyticsTab klass={klass} />;
     case 'export':
       return <ExportTab klass={klass} />;
     case 'settings':
