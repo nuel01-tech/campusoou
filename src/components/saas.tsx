@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { SearchIcon } from './icons';
 
 // --- Vertical Tabs Component -------------------------------------------------
 
@@ -53,21 +54,34 @@ export function VerticalTabs<K extends string>({
   );
 }
 
-// --- SaaS KPI Stat Cards -----------------------------------------------------
+// --- SaaS KPI Stat Cards (Figma .metric-row & .metric design) ----------------
 
 export interface StatMetric {
   label: string;
   value: ReactNode;
   sublabel?: ReactNode;
-  tone?: 'default' | 'ok' | 'warn' | 'accent';
+  tone?: 'default' | 'ok' | 'warn' | 'accent' | 'danger' | 'purple';
 }
 
 export function KpiStatGrid({ items }: { items: StatMetric[] }) {
+  const dotTone = (tone?: StatMetric['tone'], idx?: number) => {
+    if (tone === 'ok') return 'green';
+    if (tone === 'warn') return 'amber';
+    if (tone === 'danger') return 'red';
+    if (tone === 'accent') return 'blue';
+    if (tone === 'purple') return 'purple';
+    const cycle = ['green', 'blue', 'amber', 'purple'] as const;
+    return cycle[(idx ?? 0) % cycle.length];
+  };
+
   return (
     <div className="kpi-grid">
-      {items.map((m) => (
+      {items.map((m, idx) => (
         <div key={m.label} className={`kpi-card ${m.tone ? `kpi-${m.tone}` : ''}`}>
-          <span className="kpi-label">{m.label}</span>
+          <div className="kpi-top">
+            <span className="kpi-label">{m.label}</span>
+            <span className={`kpi-dot kpi-dot-${dotTone(m.tone, idx)}`} aria-hidden="true" />
+          </div>
           <strong className="kpi-value">{m.value}</strong>
           {m.sublabel && <span className="kpi-sub">{m.sublabel}</span>}
         </div>
@@ -98,7 +112,13 @@ export function ProgressBar({
           <strong className="small mono">{pct}%</strong>
         </div>
       )}
-      <div className="progress-track" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+      <div
+        className="progress-track"
+        role="progressbar"
+        aria-valuenow={pct}
+        aria-valuemin={0}
+        aria-valuemax={100}
+      >
         <div className={`progress-fill progress-${tone}`} style={{ width: `${pct}%` }} />
       </div>
     </div>
@@ -160,9 +180,16 @@ export function CommandPalette({
   };
 
   return (
-    <div className="cmd-backdrop" onClick={onClose} role="dialog" aria-modal="true" aria-label="Quick navigation">
+    <div
+      className="cmd-backdrop"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Quick navigation"
+    >
       <div className="cmd-modal" onClick={(e) => e.stopPropagation()}>
         <div className="cmd-search-wrap">
+          <SearchIcon size={16} className="muted" />
           <input
             type="search"
             className="cmd-input"
@@ -187,7 +214,9 @@ export function CommandPalette({
               </button>
             </li>
           ))}
-          {filtered.length === 0 && <li className="cmd-empty muted small">No matching commands found.</li>}
+          {filtered.length === 0 && (
+            <li className="cmd-empty muted small">No matching commands found.</li>
+          )}
         </ul>
       </div>
     </div>

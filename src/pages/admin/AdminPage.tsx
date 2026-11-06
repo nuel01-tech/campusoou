@@ -23,9 +23,24 @@ import {
   PageHeader,
   PageLoader,
   SelectField,
+  StatusPill,
+  StudentCell,
   TextField,
 } from '@/components/ui';
 import { KpiStatGrid, VerticalTabs, type VerticalTabItem } from '@/components/saas';
+import {
+  AlertCircleIcon,
+  Building2Icon,
+  ClipboardCheckIcon,
+  CopyIcon,
+  LayoutDashboardIcon,
+  MessageSquareIcon,
+  PlusIcon,
+  RefreshCwIcon,
+  ShieldCheckIcon,
+  UserPlusIcon,
+  UsersIcon,
+} from '@/components/icons';
 import { toAppError } from '@/lib/errors';
 import { formatDate, formatTime, pluralize } from '@/lib/format';
 import { ACADEMIC_LEVELS, type Department, type RepSummary } from '@/types';
@@ -97,46 +112,54 @@ export default function AdminPage() {
   const activeRepsCount = list.filter((r) => r.active).length;
   const totalClassesCount = list.reduce((sum, r) => sum + r.class_count, 0);
   const totalStudentsCount = list.reduce((sum, r) => sum + r.student_count, 0);
+  const maxDeptReps = Math.max(1, ...deptList.map((d) => d.rep_count));
 
   const tabItems: VerticalTabItem<AdminTabKey>[] = [
     {
       key: 'overview',
       label: 'Executive Overview',
       description: 'KPI metrics & department summary',
+      icon: <LayoutDashboardIcon size={16} />,
     },
     {
       key: 'live-sessions',
       label: 'Live Campus Sessions',
       description: 'Real-time active lecture roll-calls',
       badge: liveList.length > 0 ? `${liveList.length} Live` : undefined,
+      icon: <ClipboardCheckIcon size={16} />,
     },
     {
       key: 'defaulters',
       label: 'Defaulters Watchlist',
       description: 'Students below 75% NUC benchmark',
+      icon: <AlertCircleIcon size={16} />,
     },
     {
       key: 'reps',
       label: 'Class Rep Directory',
       description: 'Search, filter & manage reps',
       badge: list.length,
+      icon: <UsersIcon size={16} />,
     },
     {
       key: 'create',
       label: 'Provision Class Rep',
       description: 'Assign department, level & login',
       badge: '+',
+      icon: <UserPlusIcon size={16} />,
     },
     {
       key: 'departments',
       label: 'Departments Manager',
       description: 'Add or remove departments',
       badge: deptList.length,
+      icon: <Building2Icon size={16} />,
     },
     {
       key: 'audit',
       label: 'Anti-Proxy & Device Audit',
       description: 'Biometric passkeys & device bindings',
+      icon: <ShieldCheckIcon size={16} />,
     },
   ];
 
@@ -201,12 +224,14 @@ export default function AdminPage() {
   return (
     <div className="container stack-lg">
       <PageHeader
+        eyebrow="Olabisi Onabanjo University · Governance Suite"
         title="Super Admin Control Center"
         subtitle="Manage university departments, provision Class Rep accounts by level, and oversee attendance operations."
         actions={
           <div className="row">
             <Button variant="secondary" onClick={() => setTab('departments')}>
-              + Department
+              <Building2Icon size={15} />
+              <span>Departments</span>
             </Button>
             <Button
               onClick={() => {
@@ -214,7 +239,8 @@ export default function AdminPage() {
                 setTab('create');
               }}
             >
-              + New Class Rep
+              <PlusIcon size={15} />
+              <span>New Class Rep</span>
             </Button>
           </div>
         }
@@ -238,13 +264,13 @@ export default function AdminPage() {
             label: 'Active Classes',
             value: totalClassesCount,
             sublabel: 'Managed across all levels',
-            tone: 'default',
+            tone: 'purple',
           },
           {
             label: 'Enrolled Students',
             value: totalStudentsCount,
             sublabel: 'Total students on class rosters',
-            tone: 'default',
+            tone: 'warn',
           },
         ]}
       />
@@ -256,10 +282,12 @@ export default function AdminPage() {
           action={
             <div className="row">
               <Button size="sm" variant="secondary" onClick={() => copyCredentials(created)}>
-                Copy details
+                <CopyIcon size={13} />
+                <span>Copy details</span>
               </Button>
               <Button size="sm" variant="ghost" onClick={() => shareCredentialsWhatsApp(created)}>
-                WhatsApp
+                <MessageSquareIcon size={13} />
+                <span>WhatsApp</span>
               </Button>
             </div>
           }
@@ -285,6 +313,41 @@ export default function AdminPage() {
         <div className="vtabs-panel">
           {activeTab === 'overview' && (
             <div className="stack-lg">
+              {deptList.length > 0 && (
+                <section className="panel stack">
+                  <div className="section-head">
+                    <div>
+                      <h2>Department Representation Distribution</h2>
+                      <p className="muted small">
+                        Assigned Class Representatives across configured university departments.
+                      </p>
+                    </div>
+                    <Badge tone="ok">{deptList.length} Departments</Badge>
+                  </div>
+
+                  <div className="chart-bars" aria-label="Department representation chart">
+                    {deptList.slice(0, 8).map((d, idx) => {
+                      const pct = Math.max(16, Math.round((d.rep_count / maxDeptReps) * 100));
+                      return (
+                        <div key={d.id} className="chart-col">
+                          <div className="chart-bar-wrap">
+                            <div
+                              className={`chart-bar ${idx === 0 || d.rep_count === maxDeptReps ? 'is-highlight' : ''}`}
+                              style={{ height: `${pct}%` }}
+                            >
+                              <span>{d.rep_count}</span>
+                            </div>
+                          </div>
+                          <span className="chart-label" title={d.name}>
+                            {d.name.slice(0, 10)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
+
               <section className="panel stack">
                 <div className="section-head">
                   <div>
@@ -337,7 +400,8 @@ export default function AdminPage() {
                                   setTab('create');
                                 }}
                               >
-                                + Add rep here
+                                <PlusIcon size={13} />
+                                <span>Add rep here</span>
                               </Button>
                             </td>
                           </tr>
@@ -371,7 +435,7 @@ export default function AdminPage() {
                     <table className="table">
                       <thead>
                         <tr>
-                          <th>Name</th>
+                          <th>Class Representative</th>
                           <th>Department</th>
                           <th>Level</th>
                           <th>Status</th>
@@ -383,7 +447,7 @@ export default function AdminPage() {
                         {list.slice(0, 5).map((r) => (
                           <tr key={r.id}>
                             <td>
-                              <strong>{r.full_name}</strong>
+                              <StudentCell name={r.full_name} subtext={r.email} />
                             </td>
                             <td>
                               {r.department_name ? (
@@ -394,10 +458,13 @@ export default function AdminPage() {
                             </td>
                             <td>{r.level ? <Badge tone="ok">{r.level}</Badge> : '—'}</td>
                             <td>
-                              {r.active ? <Badge tone="ok">Active</Badge> : <Badge tone="muted">Suspended</Badge>}
+                              <StatusPill
+                                status={r.active ? 'present' : 'absent'}
+                                label={r.active ? 'Active' : 'Suspended'}
+                              />
                             </td>
-                            <td className="num">{r.class_count}</td>
-                            <td className="num">{r.student_count}</td>
+                            <td className="num mono">{r.class_count}</td>
+                            <td className="num mono">{r.student_count}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -418,7 +485,8 @@ export default function AdminPage() {
                   </p>
                 </div>
                 <Button size="sm" onClick={() => setTab('create')}>
-                  + Provision rep
+                  <PlusIcon size={14} />
+                  <span>Provision rep</span>
                 </Button>
               </div>
 
@@ -470,10 +538,9 @@ export default function AdminPage() {
                   <table className="table">
                     <thead>
                       <tr>
-                        <th>Name</th>
+                        <th>Class Representative</th>
                         <th>Department</th>
                         <th>Level</th>
-                        <th>Email</th>
                         <th className="num">Classes</th>
                         <th className="num">Students</th>
                         <th>Status</th>
@@ -489,7 +556,7 @@ export default function AdminPage() {
                         return (
                           <tr key={r.id}>
                             <td>
-                              <strong>{r.full_name}</strong>
+                              <StudentCell name={r.full_name} subtext={r.email} />
                             </td>
                             <td>
                               {r.department_name ? (
@@ -505,15 +572,13 @@ export default function AdminPage() {
                                 <span className="muted small">—</span>
                               )}
                             </td>
-                            <td className="mono">{r.email}</td>
-                            <td className="num">{r.class_count}</td>
-                            <td className="num">{r.student_count}</td>
+                            <td className="num mono">{r.class_count}</td>
+                            <td className="num mono">{r.student_count}</td>
                             <td>
-                              {r.active ? (
-                                <Badge tone="ok">Active</Badge>
-                              ) : (
-                                <Badge tone="muted">Suspended</Badge>
-                              )}
+                              <StatusPill
+                                status={r.active ? 'present' : 'absent'}
+                                label={r.active ? 'Active' : 'Suspended'}
+                              />
                             </td>
                             <td className="nowrap muted">{formatDate(r.created_at)}</td>
                             <td className="actions-col">
@@ -539,7 +604,7 @@ export default function AdminPage() {
                       })}
                       {filteredReps.length === 0 && (
                         <tr>
-                          <td colSpan={9} className="muted center">
+                          <td colSpan={8} className="muted center">
                             No Class Reps match your current filters.
                           </td>
                         </tr>
@@ -665,7 +730,7 @@ function DepartmentsPanel({
             Add departments here so you can select them when creating Class Rep accounts or classes.
           </p>
         </div>
-        <span className="muted small">{pluralize(departments.length, 'department', 'departments')}</span>
+        <Badge tone="neutral">{pluralize(departments.length, 'department', 'departments')}</Badge>
       </div>
 
       <form onSubmit={submit} noValidate className="dept-form-row">
@@ -679,7 +744,8 @@ function DepartmentsPanel({
           autoFocus
         />
         <Button type="submit" variant="primary" loading={create.pending}>
-          Add department
+          <PlusIcon size={15} />
+          <span>Add department</span>
         </Button>
       </form>
 
@@ -923,10 +989,12 @@ function AdminLiveSessionsPanel({
         </div>
         <div className="row">
           <Button size="sm" variant="secondary" onClick={onRefresh} loading={loading}>
-            Refresh
+            <RefreshCwIcon size={13} />
+            <span>Refresh</span>
           </Button>
           <Link to="/rep" className="btn btn-primary btn-sm">
-            <span>+ Start a session</span>
+            <PlusIcon size={14} />
+            <span>Start a session</span>
           </Link>
         </div>
       </div>
@@ -969,7 +1037,9 @@ function AdminLiveSessionsPanel({
                       {s.level && <Badge tone="ok">{s.level}</Badge>}
                     </div>
                   </td>
-                  <td>{s.venue} ({s.radius_m}m)</td>
+                  <td>
+                    {s.venue} ({s.radius_m}m)
+                  </td>
                   <td className="num">
                     <Badge tone="live">{s.present_count} Present</Badge>
                   </td>
@@ -1098,16 +1168,17 @@ function AdminDefaultersPanel({ departments }: { departments: Department[] }) {
               {filtered.slice(0, 100).map((st) => (
                 <tr key={st.id}>
                   <td>
-                    <strong>{st.full_name}</strong>
+                    <StudentCell name={st.full_name} />
                   </td>
                   <td className="mono">{st.matric_no}</td>
                   <td>{st.class_name}</td>
                   <td>{st.department_name}</td>
-                  <td className="num">{st.attended}</td>
+                  <td className="num mono">{st.attended}</td>
                   <td>
-                    <Badge tone={st.attended > 3 ? 'ok' : 'muted'}>
-                      {st.attended > 3 ? 'Monitoring' : 'At-Risk Defaulter'}
-                    </Badge>
+                    <StatusPill
+                      status={st.attended > 3 ? 'present' : 'absent'}
+                      label={st.attended > 3 ? 'Monitoring' : 'At-Risk Defaulter'}
+                    />
                   </td>
                   <td className="actions-col">
                     <Button
@@ -1115,7 +1186,8 @@ function AdminDefaultersPanel({ departments }: { departments: Department[] }) {
                       variant="secondary"
                       onClick={() => shareWhatsAppWarning(st)}
                     >
-                      WhatsApp Notice
+                      <MessageSquareIcon size={13} />
+                      <span>WhatsApp Notice</span>
                     </Button>
                   </td>
                 </tr>
@@ -1157,7 +1229,8 @@ function AdminAuditPanel() {
           </p>
         </div>
         <Button size="sm" variant="secondary" onClick={() => void auditQuery.reload()}>
-          Refresh audit logs
+          <RefreshCwIcon size={13} />
+          <span>Refresh audit logs</span>
         </Button>
       </div>
 
@@ -1188,7 +1261,7 @@ function AdminAuditPanel() {
               {filtered.map((st: any) => (
                 <tr key={st.id}>
                   <td>
-                    <strong>{st.full_name}</strong>
+                    <StudentCell name={st.full_name} />
                   </td>
                   <td className="mono">{st.matric_no}</td>
                   <td>{st.classes?.name ?? 'Class'}</td>
@@ -1207,11 +1280,11 @@ function AdminAuditPanel() {
                   </td>
                   <td>
                     {st.suspended ? (
-                      <Badge tone="muted">Suspended</Badge>
+                      <StatusPill status="absent" label="Suspended" />
                     ) : st.user_id ? (
-                      <Badge tone="ok">Active & Verified</Badge>
+                      <StatusPill status="present" label="Active & Verified" />
                     ) : (
-                      <Badge tone="neutral">Pending Claim</Badge>
+                      <StatusPill status="late" label="Pending Claim" />
                     )}
                   </td>
                 </tr>

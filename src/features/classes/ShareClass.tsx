@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { joinLink } from '@/services/classes';
 import { useToast } from '@/hooks/useToast';
+import { CopyIcon, MessageSquareIcon, Share2Icon } from '@/components/icons';
 
 /** Join link + code, with copy, WhatsApp broadcast, and native share. */
 export function ShareClass({ code, classNameLabel }: { code: string; classNameLabel?: string }) {
@@ -53,9 +54,11 @@ export function ShareClass({ code, classNameLabel }: { code: string; classNameLa
       </div>
       <div className="row">
         <button type="button" className="btn btn-primary btn-sm" onClick={copy}>
+          <CopyIcon size={13} />
           <span>{copied ? 'Copied!' : 'Copy link'}</span>
         </button>
         <button type="button" className="btn btn-secondary btn-sm" onClick={shareWhatsApp}>
+          <MessageSquareIcon size={13} />
           <span>WhatsApp group</span>
         </button>
         <button type="button" className="btn btn-ghost btn-sm" onClick={copyCode}>
@@ -63,6 +66,7 @@ export function ShareClass({ code, classNameLabel }: { code: string; classNameLa
         </button>
         {typeof navigator.share === 'function' && (
           <button type="button" className="btn btn-ghost btn-sm" onClick={share}>
+            <Share2Icon size={13} />
             <span>Share</span>
           </button>
         )}

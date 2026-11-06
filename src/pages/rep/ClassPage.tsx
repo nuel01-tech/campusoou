@@ -3,6 +3,14 @@ import { useAsync } from '@/hooks/useAsync';
 import { getClass } from '@/services/classes';
 import { Badge, ErrorAlert, PageHeader, PageLoader } from '@/components/ui';
 import { VerticalTabs, type VerticalTabItem } from '@/components/saas';
+import {
+  AwardIcon,
+  ClipboardCheckIcon,
+  FileSpreadsheetIcon,
+  PlusIcon,
+  SettingsIcon,
+  UsersIcon,
+} from '@/components/icons';
 import { ShareClass } from '@/features/classes/ShareClass';
 import { SessionsTab } from '@/features/sessions/SessionsTab';
 import { RosterTab } from '@/features/roster/RosterTab';
@@ -12,11 +20,36 @@ import { SettingsTab } from '@/features/classes/SettingsTab';
 import type { ClassRoom } from '@/types';
 
 const TABS = [
-  { key: 'sessions', label: 'Lecture Sessions', description: 'Start & monitor GPS roll-call' },
-  { key: 'students', label: 'Student Roster', description: 'Import list & manage phone claims' },
-  { key: 'analytics', label: '75% Eligibility & Stats', description: 'Attendance % & at-risk students' },
-  { key: 'export', label: 'Export Sheet', description: 'Download Excel / CSV matrix' },
-  { key: 'settings', label: 'Class Settings', description: 'Department, level & danger zone' },
+  {
+    key: 'sessions',
+    label: 'Lecture Sessions',
+    description: 'Start & monitor GPS roll-call',
+    icon: <ClipboardCheckIcon size={16} />,
+  },
+  {
+    key: 'students',
+    label: 'Student Roster',
+    description: 'Import list & manage phone claims',
+    icon: <UsersIcon size={16} />,
+  },
+  {
+    key: 'analytics',
+    label: '75% Eligibility & Stats',
+    description: 'Attendance % & at-risk students',
+    icon: <AwardIcon size={16} />,
+  },
+  {
+    key: 'export',
+    label: 'Export Sheet',
+    description: 'Download Excel / CSV matrix',
+    icon: <FileSpreadsheetIcon size={16} />,
+  },
+  {
+    key: 'settings',
+    label: 'Class Settings',
+    description: 'Department, level & danger zone',
+    icon: <SettingsIcon size={16} />,
+  },
 ] as const;
 
 type TabKey = (typeof TABS)[number]['key'];
@@ -45,6 +78,7 @@ export default function ClassPage() {
     key: t.key,
     label: t.label,
     description: t.description,
+    icon: t.icon,
   }));
 
   const handleSelectTab = (key: TabKey) => {
@@ -54,6 +88,7 @@ export default function ClassPage() {
   return (
     <div className="container stack-lg">
       <PageHeader
+        eyebrow={c.department_name ? `${c.department_name} · Cohort Workspace` : 'Cohort Workspace'}
         title={c.name}
         subtitle={
           <span className="row" style={{ marginTop: '0.25rem', gap: '0.45rem' }}>
@@ -65,7 +100,8 @@ export default function ClassPage() {
         back={{ to: '/rep', label: 'All classes' }}
         actions={
           <Link to={`/rep/class/${c.id}/new-session`} className="btn btn-primary btn-md">
-            <span>+ Start GPS Session</span>
+            <PlusIcon size={15} />
+            <span>Start GPS Session</span>
           </Link>
         }
       />

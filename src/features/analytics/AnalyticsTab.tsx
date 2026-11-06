@@ -2,8 +2,19 @@ import { useMemo, useState } from 'react';
 import { useAsync } from '@/hooks/useAsync';
 import { listStudents } from '@/services/roster';
 import { listAttendanceFor, listSessions } from '@/services/sessions';
-import { Badge, Button, EmptyState, ErrorAlert, PageLoader, SelectField, TextField } from '@/components/ui';
+import {
+  Badge,
+  Button,
+  EmptyState,
+  ErrorAlert,
+  PageLoader,
+  SelectField,
+  StatusPill,
+  StudentCell,
+  TextField,
+} from '@/components/ui';
 import { KpiStatGrid, ProgressBar } from '@/components/saas';
+import { AwardIcon, MessageSquareIcon } from '@/components/icons';
 import type { Attendance, ClassRoom, Session, Student } from '@/types';
 
 const ALL = '__all__';
@@ -154,7 +165,8 @@ export function AnalyticsTab({ klass }: { klass: ClassRoom }) {
           </p>
         </div>
         <Button size="sm" variant="secondary" onClick={shareSummaryWithLecturer}>
-          💬 WhatsApp Summary to Lecturer / HOD
+          <MessageSquareIcon size={14} />
+          <span>WhatsApp Summary to Lecturer / HOD</span>
         </Button>
       </div>
 
@@ -182,7 +194,7 @@ export function AnalyticsTab({ klass }: { klass: ClassRoom }) {
             label: 'Below 75% (At Risk)',
             value: defaulterCount,
             sublabel: 'Needs attendance improvement',
-            tone: defaulterCount > 0 ? 'warn' : 'default',
+            tone: defaulterCount > 0 ? 'danger' : 'default',
           },
         ]}
       />
@@ -238,10 +250,16 @@ export function AnalyticsTab({ klass }: { klass: ClassRoom }) {
                 {visibleRows.map((row) => (
                   <tr key={row.student.id}>
                     <td>
-                      <div className="row" style={{ gap: '0.45rem' }}>
-                        <strong>{row.student.full_name}</strong>
-                        {row.rate === 100 && <Badge tone="ok">🔥 100% Streak</Badge>}
-                      </div>
+                      <StudentCell
+                        name={row.student.full_name}
+                        badges={
+                          row.rate === 100 ? (
+                            <Badge tone="ok" icon={<AwardIcon size={11} />}>
+                              100% Streak
+                            </Badge>
+                          ) : undefined
+                        }
+                      />
                     </td>
                     <td className="mono">{row.student.matric_no}</td>
                     <td className="num mono">
@@ -256,11 +274,10 @@ export function AnalyticsTab({ klass }: { klass: ClassRoom }) {
                       />
                     </td>
                     <td>
-                      {row.eligible ? (
-                        <Badge tone="ok">Eligible ({row.rate}%)</Badge>
-                      ) : (
-                        <Badge tone="muted">Below 75% ({row.rate}%)</Badge>
-                      )}
+                      <StatusPill
+                        status={row.eligible ? 'present' : 'absent'}
+                        label={row.eligible ? `Eligible (${row.rate}%)` : `Below 75% (${row.rate}%)`}
+                      />
                     </td>
                     <td className="actions-col">
                       {!row.eligible && (
@@ -269,7 +286,8 @@ export function AnalyticsTab({ klass }: { klass: ClassRoom }) {
                           variant="secondary"
                           onClick={() => sendWhatsAppWarning(row)}
                         >
-                          WhatsApp Warning
+                          <MessageSquareIcon size={13} />
+                          <span>WhatsApp Warning</span>
                         </Button>
                       )}
                     </td>

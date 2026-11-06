@@ -13,9 +13,19 @@ import {
   PageHeader,
   PageLoader,
   SelectField,
+  StatusPill,
+  StudentCell,
   TextField,
 } from '@/components/ui';
 import { KpiStatGrid, VerticalTabs, type VerticalTabItem } from '@/components/saas';
+import {
+  AlertCircleIcon,
+  GraduationCapIcon,
+  LayoutDashboardIcon,
+  MessageSquareIcon,
+  PlusIcon,
+  ShieldCheckIcon,
+} from '@/components/icons';
 import { formatDate } from '@/lib/format';
 import { ACADEMIC_LEVELS, type Department } from '@/types';
 
@@ -71,34 +81,40 @@ export default function ClassesPage() {
       label: 'All Classes',
       description: 'Browse, filter & manage classes',
       badge: list.length,
+      icon: <LayoutDashboardIcon size={16} />,
     },
     {
       key: 'create',
       label: 'Create New Class',
       description: 'Choose department, level & start date',
       badge: '+',
+      icon: <PlusIcon size={16} />,
     },
     {
       key: 'defaulters',
       label: 'Defaulters Watchlist',
       description: 'Students below 75% NUC benchmark',
+      icon: <AlertCircleIcon size={16} />,
     },
     {
       key: 'audit',
       label: 'Device & Anti-Proxy Audit',
       description: 'Passkey & phone binding records',
+      icon: <ShieldCheckIcon size={16} />,
     },
     {
       key: 'guide',
       label: 'Operations Guide',
       description: 'Roster upload, GPS & 75% rules',
+      icon: <GraduationCapIcon size={16} />,
     },
   ];
 
   return (
     <div className="container stack-lg">
       <PageHeader
-        title="Classes Workspace"
+        eyebrow="Class Representative Workspace"
+        title="Classes & Cohort Management"
         subtitle={
           repDeptName || profile?.level
             ? `Assigned Department: ${[repDeptName, profile?.level].filter(Boolean).join(' · ')}`
@@ -106,7 +122,10 @@ export default function ClassesPage() {
         }
         actions={
           activeTab !== 'create' && (
-            <Button onClick={() => setTab('create')}>+ New class</Button>
+            <Button onClick={() => setTab('create')}>
+              <PlusIcon size={15} />
+              <span>New Class</span>
+            </Button>
           )
         }
       />
@@ -129,13 +148,13 @@ export default function ClassesPage() {
             label: 'Academic Level',
             value: profile?.level || 'Multi-Level',
             sublabel: 'Default level for new classes',
-            tone: 'default',
+            tone: 'purple',
           },
           {
             label: 'Exam Benchmark',
             value: '75%',
-            sublabel: 'Automatic eligibility tracking',
-            tone: 'default',
+            sublabel: 'Automatic NUC eligibility tracking',
+            tone: 'warn',
           },
         ]}
       />
@@ -164,7 +183,8 @@ export default function ClassesPage() {
                     </p>
                   </div>
                   <Button size="sm" onClick={() => setTab('create')}>
-                    + Create class
+                    <PlusIcon size={14} />
+                    <span>Create class</span>
                   </Button>
                 </div>
 
@@ -264,17 +284,18 @@ export default function ClassesPage() {
             />
           )}
 
-          {activeTab === 'defaulters' && (
-            <RepDefaultersPanel classes={list} />
-          )}
+          {activeTab === 'defaulters' && <RepDefaultersPanel classes={list} />}
 
-          {activeTab === 'audit' && (
-            <RepAuditPanel classes={list} />
-          )}
+          {activeTab === 'audit' && <RepAuditPanel classes={list} />}
 
           {activeTab === 'guide' && (
             <div className="panel stack">
-              <h2>Class Rep Operations Guide</h2>
+              <div>
+                <h2>Class Rep Operations Guide</h2>
+                <p className="muted small">
+                  Standard operating workflow for Olabisi Onabanjo University (OOU) Class Representatives.
+                </p>
+              </div>
               <div className="steps-grid">
                 <div className="step-card">
                   <span className="step-num">STEP 1</span>
@@ -555,10 +576,10 @@ function RepDefaultersPanel({ classes }: { classes: any[] }) {
               {list.map((st) => (
                 <tr key={st.id}>
                   <td>
-                    <strong>{st.full_name}</strong>
+                    <StudentCell name={st.full_name} />
                   </td>
                   <td className="mono">{st.matric_no}</td>
-                  <td className="num">
+                  <td className="num mono">
                     {st.attended} / {st.totalSessions}
                   </td>
                   <td className="num font-bold">
@@ -567,9 +588,10 @@ function RepDefaultersPanel({ classes }: { classes: any[] }) {
                     </span>
                   </td>
                   <td>
-                    <Badge tone={st.rate >= 75 ? 'ok' : 'muted'}>
-                      {st.rate >= 75 ? 'Eligible' : 'At-Risk Defaulter'}
-                    </Badge>
+                    <StatusPill
+                      status={st.rate >= 75 ? 'present' : 'absent'}
+                      label={st.rate >= 75 ? 'Eligible' : 'Below 75%'}
+                    />
                   </td>
                   <td className="actions-col">
                     <Button
@@ -577,7 +599,8 @@ function RepDefaultersPanel({ classes }: { classes: any[] }) {
                       variant={st.rate < 75 ? 'secondary' : 'ghost'}
                       onClick={() => shareWhatsAppNotice(st)}
                     >
-                      WhatsApp Warning
+                      <MessageSquareIcon size={13} />
+                      <span>WhatsApp Warning</span>
                     </Button>
                   </td>
                 </tr>
@@ -660,7 +683,7 @@ function RepAuditPanel({ classes }: { classes: any[] }) {
               {list.map((st: any) => (
                 <tr key={st.id}>
                   <td>
-                    <strong>{st.full_name}</strong>
+                    <StudentCell name={st.full_name} />
                   </td>
                   <td className="mono">{st.matric_no}</td>
                   <td>
@@ -678,11 +701,11 @@ function RepAuditPanel({ classes }: { classes: any[] }) {
                   </td>
                   <td>
                     {st.suspended ? (
-                      <Badge tone="muted">Suspended</Badge>
+                      <StatusPill status="absent" label="Suspended" />
                     ) : st.user_id ? (
-                      <Badge tone="ok">Verified Device</Badge>
+                      <StatusPill status="present" label="Verified Device" />
                     ) : (
-                      <Badge tone="neutral">Pending Claim</Badge>
+                      <StatusPill status="late" label="Pending Claim" />
                     )}
                   </td>
                 </tr>

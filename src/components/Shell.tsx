@@ -5,8 +5,33 @@ import { useToast } from '@/hooks/useToast';
 import { signOut } from '@/services/auth';
 import { listClasses } from '@/services/classes';
 import { toAppError } from '@/lib/errors';
-import { Badge } from './ui';
+import { Badge, getInitials } from './ui';
 import { CommandPalette, type CommandItem } from './saas';
+import {
+  ActivityIcon,
+  AlertCircleIcon,
+  AwardIcon,
+  BookOpenIcon,
+  Building2Icon,
+  CalendarDaysIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  ClipboardCheckIcon,
+  FileSpreadsheetIcon,
+  GraduationCapIcon,
+  KeyRoundIcon,
+  LayoutDashboardIcon,
+  LogOutIcon,
+  MenuIcon,
+  PlusIcon,
+  SearchIcon,
+  SettingsIcon,
+  ShieldCheckIcon,
+  SmartphoneIcon,
+  UserPlusIcon,
+  UsersIcon,
+  XIcon,
+} from './icons';
 import type { ClassRoom } from '@/types';
 
 interface NavEntry {
@@ -15,7 +40,7 @@ interface NavEntry {
   to: string;
   match: (pathname: string, searchParams: URLSearchParams) => boolean;
   badge?: string;
-  icon?: string;
+  icon: ReactNode;
 }
 
 const ACTIVE_CLASS_KEY = 'campuspulse_active_class_id';
@@ -118,6 +143,7 @@ export function Shell({ children }: { children: ReactNode }) {
           label: 'Executive Overview',
           to: '/admin?tab=overview',
           match: (p, sp) => p === '/admin' && (!sp.get('tab') || sp.get('tab') === 'overview'),
+          icon: <LayoutDashboardIcon size={16} />,
         },
         {
           id: 'admin-live',
@@ -125,43 +151,49 @@ export function Shell({ children }: { children: ReactNode }) {
           to: '/admin?tab=live-sessions',
           match: (p, sp) => p === '/admin' && sp.get('tab') === 'live-sessions',
           badge: 'Live',
+          icon: <ClipboardCheckIcon size={16} />,
         },
         {
           id: 'admin-defaulters',
           label: 'Defaulters Watchlist (<75%)',
           to: '/admin?tab=defaulters',
           match: (p, sp) => p === '/admin' && sp.get('tab') === 'defaulters',
+          icon: <AlertCircleIcon size={16} />,
         },
         {
           id: 'admin-reps',
           label: 'Class Rep Directory',
           to: '/admin?tab=reps',
           match: (p, sp) => p === '/admin' && sp.get('tab') === 'reps',
+          icon: <UsersIcon size={16} />,
         },
         {
           id: 'admin-create',
           label: 'Provision Class Rep',
           to: '/admin?tab=create',
           match: (p, sp) => p === '/admin' && sp.get('tab') === 'create',
-          badge: '+',
+          icon: <UserPlusIcon size={16} />,
         },
         {
           id: 'admin-depts',
           label: 'Departments Manager',
           to: '/admin?tab=departments',
           match: (p, sp) => p === '/admin' && sp.get('tab') === 'departments',
+          icon: <Building2Icon size={16} />,
         },
         {
           id: 'admin-classes',
           label: 'Classes Workspace',
           to: '/rep',
           match: (p) => p.startsWith('/rep'),
+          icon: <BookOpenIcon size={16} />,
         },
         {
           id: 'admin-audit',
           label: 'Anti-Proxy & Device Audit',
           to: '/admin?tab=audit',
           match: (p, sp) => p === '/admin' && sp.get('tab') === 'audit',
+          icon: <ShieldCheckIcon size={16} />,
         },
       ];
     }
@@ -173,31 +205,35 @@ export function Shell({ children }: { children: ReactNode }) {
           label: 'All Classes / Cohorts',
           to: '/rep?tab=directory',
           match: (p, sp) => p === '/rep' && (!sp.get('tab') || sp.get('tab') === 'directory'),
+          icon: <LayoutDashboardIcon size={16} />,
         },
         {
           id: 'rep-new-class',
           label: 'Create New Class',
           to: '/rep?tab=create',
           match: (p, sp) => p === '/rep' && sp.get('tab') === 'create',
-          badge: '+',
+          icon: <PlusIcon size={16} />,
         },
         {
           id: 'rep-defaulters',
           label: 'Defaulters Watchlist (<75%)',
           to: '/rep?tab=defaulters',
           match: (p, sp) => p === '/rep' && sp.get('tab') === 'defaulters',
+          icon: <AlertCircleIcon size={16} />,
         },
         {
           id: 'rep-audit',
           label: 'Device & Anti-Proxy Audit',
           to: '/rep?tab=audit',
           match: (p, sp) => p === '/rep' && sp.get('tab') === 'audit',
+          icon: <ShieldCheckIcon size={16} />,
         },
         {
           id: 'rep-guide',
           label: 'Operations Guide',
           to: '/rep?tab=guide',
           match: (p, sp) => p === '/rep' && sp.get('tab') === 'guide',
+          icon: <GraduationCapIcon size={16} />,
         },
       ];
     }
@@ -209,24 +245,27 @@ export function Shell({ children }: { children: ReactNode }) {
           label: 'Live Check-In',
           to: '/me?tab=live',
           match: (p, sp) => p === '/me' && (!sp.get('tab') || sp.get('tab') === 'live'),
+          icon: <ClipboardCheckIcon size={16} />,
         },
         {
           id: 'student-history',
           label: 'Attendance History',
           to: '/me?tab=history',
           match: (p, sp) => p === '/me' && sp.get('tab') === 'history',
+          icon: <CalendarDaysIcon size={16} />,
         },
         {
           id: 'student-device',
           label: 'My Passkey & Device',
           to: '/me?tab=device',
           match: (p, sp) => p === '/me' && sp.get('tab') === 'device',
+          icon: <KeyRoundIcon size={16} />,
         },
       ];
     }
 
     return [];
-  }, [role, activeClassId]);
+  }, [role]);
 
   const classSubNav = useMemo<NavEntry[]>(() => {
     if (!activeClassId) return [];
@@ -237,30 +276,35 @@ export function Shell({ children }: { children: ReactNode }) {
         label: 'Lecture Sessions',
         to: base,
         match: (p) => p === base || p === `${base}/sessions`,
+        icon: <ClipboardCheckIcon size={16} />,
       },
       {
         id: 'cls-students',
         label: 'Student Roster & Claims',
         to: `${base}/students`,
         match: (p) => p === `${base}/students`,
+        icon: <UsersIcon size={16} />,
       },
       {
         id: 'cls-analytics',
         label: '75% Eligibility & Stats',
         to: `${base}/analytics`,
         match: (p) => p === `${base}/analytics`,
+        icon: <AwardIcon size={16} />,
       },
       {
         id: 'cls-export',
         label: 'Export Attendance Matrix',
         to: `${base}/export`,
         match: (p) => p === `${base}/export`,
+        icon: <FileSpreadsheetIcon size={16} />,
       },
       {
         id: 'cls-settings',
         label: 'Class Settings',
         to: `${base}/settings`,
         match: (p) => p === `${base}/settings`,
+        icon: <SettingsIcon size={16} />,
       },
     ];
   }, [activeClassId]);
@@ -300,12 +344,7 @@ export function Shell({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [primaryNav, classSubNav, role, userClasses, activeClass]);
 
-  const initials = (profile?.full_name || user?.email || 'CP')
-    .split(/[\s@._-]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((s) => s[0]!.toUpperCase())
-    .join('');
+  const initials = getInitials(profile?.full_name || user?.email || 'CP');
 
   // Public / Marketing / Auth shell
   if (!showSaasSidebar) {
@@ -317,8 +356,13 @@ export function Shell({ children }: { children: ReactNode }) {
           <div className="container topbar-inner">
             <div className="row">
               <Link to={homePath} className="brand">
-                <span className="brand-mark" aria-hidden="true" />
-                CampusPulse
+                <span className="brand-icon" aria-hidden="true">
+                  <ActivityIcon size={16} />
+                </span>
+                <span className="brand-text-wrap">
+                  <span className="brand-title">CampusPulse</span>
+                  <span className="brand-sub">UNIVERSITY PLATFORM</span>
+                </span>
               </Link>
             </div>
             {role ? (
@@ -334,10 +378,10 @@ export function Shell({ children }: { children: ReactNode }) {
               !onAuthPage && (
                 <div className="topbar-user">
                   <Link to="/rep/login" className="topbar-link">
-                    Rep Sign In
+                    Class Rep Sign In
                   </Link>
                   <Link to="/admin/login" className="btn btn-secondary btn-sm">
-                    <span>Admin</span>
+                    <span>Super Admin</span>
                   </Link>
                 </div>
               )
@@ -349,7 +393,7 @@ export function Shell({ children }: { children: ReactNode }) {
     );
   }
 
-  // Full SaaS Vertical-Sidebar Application Layout
+  // Full SaaS Vertical-Sidebar Application Layout (Figma UI Upgrade Reference)
   return (
     <div className="saas-layout">
       {mobileMenuOpen && (
@@ -365,19 +409,11 @@ export function Shell({ children }: { children: ReactNode }) {
           <div className="saas-brand-row">
             <Link to={homePath} className="saas-brand" onClick={() => setMobileMenuOpen(false)}>
               <span className="saas-brand-mark" aria-hidden="true">
-                CP
+                <ActivityIcon size={17} />
               </span>
               <div className="saas-brand-text">
                 <span className="saas-brand-name">CampusPulse</span>
-                <span className="saas-brand-role">
-                  {role === 'super_admin'
-                    ? 'Super Admin Suite'
-                    : role === 'rep'
-                      ? profile?.level
-                        ? `Class Rep · ${profile.level}`
-                        : 'Class Rep Suite'
-                      : 'Student Portal'}
-                </span>
+                <span className="saas-brand-role">UNIVERSITY PLATFORM</span>
               </div>
             </Link>
             <button
@@ -386,14 +422,25 @@ export function Shell({ children }: { children: ReactNode }) {
               onClick={() => setMobileMenuOpen(false)}
               aria-label="Close navigation menu"
             >
-              ✕
+              <XIcon size={16} />
             </button>
           </div>
 
-          {/* Quick Class Context Selector for Class Reps & Admins */}
-          {(role === 'rep' || role === 'super_admin') && userClasses.length > 0 && (
-            <div className="saas-class-selector">
-              <span className="saas-selector-label">ACTIVE CLASS:</span>
+          {/* Workspace / Active Class Switcher Card */}
+          {(role === 'rep' || role === 'super_admin') && userClasses.length > 0 ? (
+            <div className="saas-workspace-card">
+              <div className="saas-workspace-head">
+                <span className="saas-workspace-mark" aria-hidden="true">
+                  {getInitials(activeClass?.name ?? 'CS')}
+                </span>
+                <div className="saas-workspace-meta">
+                  <span className="saas-selector-label">ACTIVE COHORT</span>
+                  <strong className="saas-workspace-name">
+                    {activeClass?.name ?? 'Select class'}
+                  </strong>
+                </div>
+                <ChevronDownIcon size={14} className="muted" />
+              </div>
               <select
                 className="saas-selector-select"
                 value={activeClassId ?? ''}
@@ -407,6 +454,26 @@ export function Shell({ children }: { children: ReactNode }) {
                 ))}
               </select>
             </div>
+          ) : (
+            <div className="saas-workspace-card">
+              <div className="saas-workspace-head">
+                <span className="saas-workspace-mark" aria-hidden="true">
+                  {role === 'super_admin' ? 'SA' : role === 'rep' ? 'CR' : 'ST'}
+                </span>
+                <div className="saas-workspace-meta">
+                  <span className="saas-selector-label">ACTIVE PORTAL</span>
+                  <strong className="saas-workspace-name">
+                    {role === 'super_admin'
+                      ? 'Super Admin Suite'
+                      : role === 'rep'
+                        ? profile?.level
+                          ? `Class Rep · ${profile.level}`
+                          : 'Class Rep Suite'
+                        : 'Student Attendance'}
+                  </strong>
+                </div>
+              </div>
+            </div>
           )}
 
           <button
@@ -418,7 +485,10 @@ export function Shell({ children }: { children: ReactNode }) {
             }}
             title="Quick Jump (Ctrl+K)"
           >
-            <span>Quick jump…</span>
+            <span className="row" style={{ gap: '0.45rem' }}>
+              <SearchIcon size={14} />
+              <span>Quick jump…</span>
+            </span>
             <kbd>⌘K</kbd>
           </button>
         </div>
@@ -428,7 +498,7 @@ export function Shell({ children }: { children: ReactNode }) {
           {classSubNav.length > 0 && (
             <div className="saas-nav-group">
               <span className="saas-nav-title">
-                {activeClass ? `${activeClass.name.toUpperCase()} TABS` : 'CLASS MANAGEMENT'}
+                {activeClass ? `${activeClass.name.toUpperCase()}` : 'CLASS MANAGEMENT'}
               </span>
               <nav className="saas-vnav" aria-label="Active class navigation">
                 {classSubNav.map((item) => {
@@ -440,9 +510,12 @@ export function Shell({ children }: { children: ReactNode }) {
                       onClick={() => setMobileMenuOpen(false)}
                       className={`saas-vnav-link ${active ? 'is-active' : ''}`}
                     >
-                      <span className="saas-vnav-dot" aria-hidden="true" />
+                      <span className="saas-vnav-icon" aria-hidden="true">
+                        {item.icon}
+                      </span>
                       <span className="saas-vnav-label">{item.label}</span>
                       {item.badge && <span className="saas-vnav-badge">{item.badge}</span>}
+                      {active && <span className="saas-vnav-indicator" aria-hidden="true" />}
                     </Link>
                   );
                 })}
@@ -468,9 +541,12 @@ export function Shell({ children }: { children: ReactNode }) {
                     onClick={() => setMobileMenuOpen(false)}
                     className={`saas-vnav-link ${active ? 'is-active' : ''}`}
                   >
-                    <span className="saas-vnav-dot" aria-hidden="true" />
+                    <span className="saas-vnav-icon" aria-hidden="true">
+                      {item.icon}
+                    </span>
                     <span className="saas-vnav-label">{item.label}</span>
                     {item.badge && <span className="saas-vnav-badge">{item.badge}</span>}
+                    {active && <span className="saas-vnav-indicator" aria-hidden="true" />}
                   </Link>
                 );
               })}
@@ -479,6 +555,20 @@ export function Shell({ children }: { children: ReactNode }) {
         </div>
 
         <div className="saas-sidebar-footer">
+          <div className="saas-help-card">
+            <span className="saas-help-icon" aria-hidden="true">
+              {role === 'student' ? <SmartphoneIcon size={15} /> : <ShieldCheckIcon size={15} />}
+            </span>
+            <strong>
+              {role === 'student' ? '1 Phone = 1 Student' : 'Verified Attendance'}
+            </strong>
+            <p>
+              {role === 'student'
+                ? 'Hardware WebAuthn passkey & GPS geofence protection active.'
+                : 'GPS geofencing, Passkey hardware lock & 75% NUC eligibility.'}
+            </p>
+          </div>
+
           <div className="saas-user-card">
             <div className="saas-avatar" aria-hidden="true">
               {initials}
@@ -491,10 +581,16 @@ export function Shell({ children }: { children: ReactNode }) {
                 {user?.email || (role === 'student' ? 'Biometric Passkey Linked' : '')}
               </span>
             </div>
+            <button
+              type="button"
+              className="saas-signout-icon-btn"
+              onClick={handleSignOut}
+              title="Sign out"
+              aria-label="Sign out"
+            >
+              <LogOutIcon size={15} />
+            </button>
           </div>
-          <button type="button" className="saas-signout-btn" onClick={handleSignOut}>
-            Sign out
-          </button>
         </div>
       </aside>
 
@@ -507,11 +603,13 @@ export function Shell({ children }: { children: ReactNode }) {
               onClick={() => setMobileMenuOpen((v) => !v)}
               aria-label="Toggle navigation menu"
             >
-              ☰ Menu
+              <MenuIcon size={17} />
+              <span>Menu</span>
             </button>
             <div className="saas-breadcrumbs">
-              <span className="muted small saas-breadcrumb-root">CampusPulse /</span>
-              <strong className="small saas-breadcrumb-current">
+              <span className="saas-breadcrumb-root">CampusPulse</span>
+              <ChevronRightIcon size={13} className="saas-breadcrumb-sep" />
+              <strong className="saas-breadcrumb-current">
                 {role === 'super_admin'
                   ? 'Super Admin Console'
                   : role === 'rep'
@@ -535,8 +633,12 @@ export function Shell({ children }: { children: ReactNode }) {
               className="btn btn-secondary btn-sm saas-search-btn"
               onClick={() => setCmdOpen(true)}
             >
+              <SearchIcon size={13} />
               <span>Search / ⌘K</span>
             </button>
+            <span className="saas-top-avatar" aria-hidden="true">
+              {initials}
+            </span>
           </div>
         </header>
 
@@ -552,7 +654,9 @@ export function Shell({ children }: { children: ReactNode }) {
                 onClick={() => setMobileMenuOpen(false)}
                 className={`saas-mobile-tab ${active ? 'is-active' : ''}`}
               >
-                <span className="saas-mobile-tab-dot" aria-hidden="true" />
+                <span className="saas-mobile-tab-icon" aria-hidden="true">
+                  {item.icon}
+                </span>
                 <span className="saas-mobile-tab-label">{item.label}</span>
               </Link>
             );
@@ -562,7 +666,9 @@ export function Shell({ children }: { children: ReactNode }) {
             className={`saas-mobile-tab ${mobileMenuOpen ? 'is-active' : ''}`}
             onClick={() => setMobileMenuOpen((v) => !v)}
           >
-            <span className="saas-mobile-tab-dot" aria-hidden="true" />
+            <span className="saas-mobile-tab-icon" aria-hidden="true">
+              <MenuIcon size={16} />
+            </span>
             <span className="saas-mobile-tab-label">More</span>
           </button>
         </nav>

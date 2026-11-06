@@ -43,8 +43,9 @@ export default function RepAuthPage() {
   };
 
   return (
-    <div className="container narrow">
+    <div className="container narrow stack">
       <PageHeader
+        eyebrow="Class Representative Portal"
         title="Class Rep Sign In"
         subtitle="Sign in with the email and password provided to you by the Super Admin."
         back={{ to: '/', label: 'CampusPulse home' }}

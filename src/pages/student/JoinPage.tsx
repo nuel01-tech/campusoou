@@ -6,7 +6,8 @@ import { useToast } from '@/hooks/useToast';
 import { ensureStudentSession } from '@/services/auth';
 import { claimStudent, findClassByCode, getMyEnrollment } from '@/services/student';
 import { detectIncognitoMode, isPasskeySupported, registerDevicePasskey } from '@/lib/webauthn';
-import { Alert, Badge, Button, ErrorAlert, PageLoader, TextField } from '@/components/ui';
+import { Alert, Badge, Button, ErrorAlert, PageHeader, PageLoader, TextField } from '@/components/ui';
+import { KeyRoundIcon, ShieldCheckIcon, SmartphoneIcon } from '@/components/icons';
 import { titleCase } from '@/lib/names';
 
 export function JoinPage() {
@@ -107,18 +108,27 @@ function ClaimForm({ code }: { code: string }) {
   };
 
   return (
-    <div className="container narrow">
-      <header className="page-header">
-        <div className="row" style={{ gap: '0.45rem' }}>
-          <Badge tone="ok">1 Phone = 1 Student</Badge>
-          <Badge tone="neutral">Passkey Required</Badge>
-        </div>
-        <h1>{klass.data?.name}</h1>
-        <p className="page-subtitle">
-          Enter your details exactly as your class rep uploaded them. When you tap below, your phone will prompt for your{' '}
-          <strong>Fingerprint, Face ID, or Screen Lock</strong> to permanently bind this device to your matric number.
-        </p>
-      </header>
+    <div className="container narrow stack">
+      <PageHeader
+        eyebrow={`Cohort Enrollment · Code ${code}`}
+        title={klass.data?.name}
+        subtitle={
+          <span>
+            Verify your identity against the official department list. When you tap below, your phone will prompt for your{' '}
+            <strong>Fingerprint, Face ID, or Screen Lock</strong> to permanently bind this device to your matric number.
+          </span>
+        }
+        back={{ to: '/', label: 'CampusPulse home' }}
+      />
+
+      <div className="row" style={{ gap: '0.45rem' }}>
+        <Badge tone="ok" icon={<SmartphoneIcon size={12} />}>
+          1 Phone = 1 Student
+        </Badge>
+        <Badge tone="info" icon={<KeyRoundIcon size={12} />}>
+          Hardware Passkey Required
+        </Badge>
+      </div>
 
       {role === 'rep' || role === 'super_admin' ? (
         <Alert tone="warning" title="You're signed in as staff">
@@ -126,6 +136,13 @@ function ClaimForm({ code }: { code: string }) {
         </Alert>
       ) : (
         <form onSubmit={submit} noValidate className="panel stack">
+          <div>
+            <h2>Claim Your Student Profile</h2>
+            <p className="muted small">
+              Enter your details exactly as your Class Representative uploaded them on the class roster.
+            </p>
+          </div>
+
           <TextField
             label="Matric number"
             value={matric}
@@ -150,9 +167,12 @@ function ClaimForm({ code }: { code: string }) {
           <ErrorAlert error={claim.error} />
 
           <Button type="submit" size="lg" block loading={claim.pending}>
-            {claim.pending
-              ? 'Verifying Passkey & Binding Phone…'
-              : 'Set Up Passkey & Claim My Account'}
+            <ShieldCheckIcon size={16} />
+            <span>
+              {claim.pending
+                ? 'Verifying Passkey & Binding Phone…'
+                : 'Set Up Passkey & Claim My Account'}
+            </span>
           </Button>
           <p className="fine-print">
             Strict Security: Once claimed, your matric number is locked to this phone’s hardware passkey and cannot be used on any other phone or in Incognito mode.

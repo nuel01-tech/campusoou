@@ -3,6 +3,7 @@ import { useAction, useAsync } from '@/hooks/useAsync';
 import { listStudents } from '@/services/roster';
 import { listAttendanceFor, listSessions } from '@/services/sessions';
 import { Button, EmptyState, ErrorAlert, PageLoader, SelectField } from '@/components/ui';
+import { DownloadIcon, FileSpreadsheetIcon } from '@/components/icons';
 import { buildMatrix } from './buildMatrix';
 import { downloadMatrix, type ExportFormat } from './downloadMatrix';
 import type { ClassRoom } from '@/types';
@@ -51,13 +52,17 @@ export function ExportTab({ klass }: { klass: ClassRoom }) {
   if (base.loading) return <PageLoader />;
   if (base.error) return <ErrorAlert error={base.error} onRetry={() => base.reload()} />;
   if (!base.data?.sessions.length) {
-    return <EmptyState title="Nothing to export yet">Run at least one session and the sheet will appear here.</EmptyState>;
+    return (
+      <EmptyState title="Nothing to export yet">
+        Run at least one session and the vertical weekly attendance matrix will appear here.
+      </EmptyState>
+    );
   }
 
   return (
-    <div className="stack">
+    <div className="panel stack">
       <div className="export-bar">
-        <SelectField label="Course" value={course} onChange={(e) => setPicked(e.target.value)}>
+        <SelectField label="Course filter" value={course} onChange={(e) => setPicked(e.target.value)}>
           {courses.map((c) => (
             <option key={c} value={c}>
               {c}
@@ -66,19 +71,33 @@ export function ExportTab({ klass }: { klass: ClassRoom }) {
           {courses.length > 1 && <option value={ALL}>All courses combined</option>}
         </SelectField>
         <div className="row">
-          <Button onClick={() => download.run('xlsx')} disabled={!matrix || attendance.loading} loading={download.pending}>
-            Download Excel
+          <Button
+            onClick={() => download.run('xlsx')}
+            disabled={!matrix || attendance.loading}
+            loading={download.pending}
+          >
+            <FileSpreadsheetIcon size={15} />
+            <span>Download Excel (.xlsx)</span>
           </Button>
-          <Button variant="secondary" onClick={() => download.run('csv')} disabled={!matrix || attendance.loading}>
-            Download CSV
+          <Button
+            variant="secondary"
+            onClick={() => download.run('csv')}
+            disabled={!matrix || attendance.loading}
+          >
+            <DownloadIcon size={15} />
+            <span>Download CSV</span>
           </Button>
         </div>
       </div>
       <p className="muted small">
-        P = present, A = absent. Weeks with more than one session show attended/held, e.g. 1/2.
+        <strong>P</strong> = present, <strong>A</strong> = absent. Weeks with more than one session show attended/held,
+        e.g. <code>1/2</code>.
       </p>
 
-      <ErrorAlert error={attendance.error ?? download.error} onRetry={attendance.error ? () => attendance.reload() : undefined} />
+      <ErrorAlert
+        error={attendance.error ?? download.error}
+        onRetry={attendance.error ? () => attendance.reload() : undefined}
+      />
 
       {attendance.loading ? (
         <PageLoader label="Building sheet" />

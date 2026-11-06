@@ -7,6 +7,7 @@ import { locate } from '@/lib/geo';
 import { toAppError, type AppError } from '@/lib/errors';
 import { weekFor } from '@/lib/week';
 import { Alert, Button, ErrorAlert, PageHeader, PageLoader, SelectField, TextField } from '@/components/ui';
+import { MapPinIcon, RefreshCwIcon } from '@/components/icons';
 import type { GeoFix } from '@/types';
 
 const RADII = [30, 50, 100, 200, 500];
@@ -99,10 +100,15 @@ function NewSessionForm({ klass, sessions }: Awaited<ReturnType<typeof loadShape
   };
 
   return (
-    <div className="container narrow">
-      <PageHeader title="Start a session" subtitle={klass.name} back={{ to: `/rep/class/${klass.id}`, label: 'Back' }} />
+    <div className="container narrow stack">
+      <PageHeader
+        eyebrow="GPS Lecture Roll-Call"
+        title="Start a Lecture Session"
+        subtitle={`${klass.name} · Stand inside the venue so your phone captures the exact lecture hall coordinates.`}
+        back={{ to: `/rep/class/${klass.id}`, label: klass.name }}
+      />
 
-      <form onSubmit={submit} noValidate className="stack">
+      <form onSubmit={submit} noValidate className="panel stack">
         <div className="grid-2">
           <TextField
             label="Course code"
@@ -123,7 +129,7 @@ function NewSessionForm({ klass, sessions }: Awaited<ReturnType<typeof loadShape
             value={week}
             onChange={(e) => setWeek(e.target.value)}
             error={touched ? errors.week : null}
-            hint={klass.semester_start ? 'From your semester start date.' : undefined}
+            hint={klass.semester_start ? 'Calculated from semester start date.' : undefined}
           />
         </div>
         <datalist id="course-options">
@@ -133,10 +139,10 @@ function NewSessionForm({ klass, sessions }: Awaited<ReturnType<typeof loadShape
         </datalist>
 
         <TextField
-          label="Venue"
+          label="Lecture venue"
           value={venue}
           onChange={(e) => setVenue(e.target.value)}
-          placeholder="e.g. LT 2"
+          placeholder="e.g. LT 2 / Hall B"
           list="venue-options"
           error={touched ? errors.venue : null}
           maxLength={120}
@@ -149,7 +155,7 @@ function NewSessionForm({ klass, sessions }: Awaited<ReturnType<typeof loadShape
 
         <div className="grid-2">
           <SelectField
-            label="Check-in radius"
+            label="GPS check-in radius"
             value={radius}
             onChange={(e) => setRadius(e.target.value)}
             hint="50 m covers most lecture halls."
@@ -160,7 +166,7 @@ function NewSessionForm({ klass, sessions }: Awaited<ReturnType<typeof loadShape
               </option>
             ))}
           </SelectField>
-          <SelectField label="Open for" value={duration} onChange={(e) => setDuration(e.target.value)}>
+          <SelectField label="Session duration" value={duration} onChange={(e) => setDuration(e.target.value)}>
             {DURATIONS.map((d) => (
               <option key={d} value={d}>
                 {d < 60 ? `${d} minutes` : `${d / 60} hour${d > 60 ? 's' : ''}`}
@@ -174,7 +180,8 @@ function NewSessionForm({ klass, sessions }: Awaited<ReturnType<typeof loadShape
         <ErrorAlert error={create.error} />
 
         <Button type="submit" size="lg" block loading={create.pending} disabled={locating}>
-          Start session
+          <MapPinIcon size={16} />
+          <span>Start Live GPS Session</span>
         </Button>
       </form>
     </div>
@@ -196,14 +203,22 @@ function LocationBox({
 }) {
   if (locating) {
     return (
-      <Alert tone="info" title="Getting your location…">
+      <Alert tone="info" title="Acquiring GPS coordinates…">
         Stand inside the venue. The session centre is set to where you are now.
       </Alert>
     );
   }
   if (error) {
     return (
-      <Alert tone="error" title="Location needed" action={<Button size="sm" variant="secondary" type="button" onClick={onRetry}>Try again</Button>}>
+      <Alert
+        tone="error"
+        title="Location needed"
+        action={
+          <Button size="sm" variant="secondary" type="button" onClick={onRetry}>
+            Try again
+          </Button>
+        }
+      >
         {error.message}
       </Alert>
     );
@@ -215,16 +230,17 @@ function LocationBox({
   return (
     <Alert
       tone={rough ? 'warning' : 'success'}
-      title={`Location set · accurate to about ${Math.round(fix.accuracy)} m`}
+      title={`GPS Location Locked · ±${Math.round(fix.accuracy)} m accuracy`}
       action={
         <Button size="sm" variant="secondary" type="button" onClick={onRetry}>
-          Refresh
+          <RefreshCwIcon size={13} />
+          <span>Refresh</span>
         </Button>
       }
     >
       {rough
         ? 'That is a rough reading. Move closer to a window or refresh, or choose a larger radius.'
-        : 'Students must be within the radius of this point.'}
+        : 'Students must be within the radius of this point to verify attendance.'}
       <br />
       <Link
         className="small"
@@ -232,7 +248,7 @@ function LocationBox({
         target="_blank"
         rel="noreferrer"
       >
-        View on map
+        View coordinates on OpenStreetMap →
       </Link>
     </Alert>
   );

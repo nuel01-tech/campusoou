@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { useAsync, useNow } from '@/hooks/useAsync';
 import { listSessionsWithCounts } from '@/services/sessions';
 import { Badge, EmptyState, ErrorAlert, PageLoader } from '@/components/ui';
+import { PlusIcon } from '@/components/icons';
 import { formatDate, formatTime, isOpen, timeLeft } from '@/lib/format';
 import type { ClassRoom } from '@/types';
 
@@ -10,7 +11,8 @@ export function SessionsTab({ klass }: { klass: ClassRoom }) {
   const now = useNow(30_000);
 
   const newLink = (
-    <Link to={`/rep/class/${klass.id}/new-session`} className="btn btn-primary btn-md">
+    <Link to={`/rep/class/${klass.id}/new-session`} className="btn btn-primary btn-sm">
+      <PlusIcon size={14} />
       <span>Start a session</span>
     </Link>
   );
@@ -19,9 +21,14 @@ export function SessionsTab({ klass }: { klass: ClassRoom }) {
 
   const list = sessions.data ?? [];
   return (
-    <div className="stack">
+    <div className="panel stack">
       <div className="section-head">
-        <h2>Sessions</h2>
+        <div>
+          <h2>Lecture Sessions</h2>
+          <p className="muted small">
+            Select any session to view real-time check-ins, project the QR code, or run a batch roll-call.
+          </p>
+        </div>
         {list.length > 0 && newLink}
       </div>
       <ErrorAlert error={sessions.error} onRetry={() => sessions.reload()} />
@@ -38,7 +45,7 @@ export function SessionsTab({ klass }: { klass: ClassRoom }) {
                 <th>Course</th>
                 <th>Venue</th>
                 <th className="num">Week</th>
-                <th>Date</th>
+                <th>Date & Time</th>
                 <th className="num">Present</th>
                 <th>Status</th>
               </tr>
@@ -54,12 +61,18 @@ export function SessionsTab({ klass }: { klass: ClassRoom }) {
                       </Link>
                     </td>
                     <td>{s.venue}</td>
-                    <td className="num">{s.week}</td>
-                    <td className="nowrap">
+                    <td className="num mono">Week {s.week}</td>
+                    <td className="nowrap muted">
                       {formatDate(s.starts_at)}, {formatTime(s.starts_at)}
                     </td>
-                    <td className="num">{s.present}</td>
-                    <td>{live ? <Badge tone="live">Live · {timeLeft(s.ends_at, now)}</Badge> : <Badge tone="muted">Closed</Badge>}</td>
+                    <td className="num font-bold">{s.present}</td>
+                    <td>
+                      {live ? (
+                        <Badge tone="live">Live · {timeLeft(s.ends_at, now)}</Badge>
+                      ) : (
+                        <Badge tone="muted">Closed</Badge>
+                      )}
+                    </td>
                   </tr>
                 );
               })}

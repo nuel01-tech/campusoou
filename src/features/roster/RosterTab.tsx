@@ -10,8 +10,20 @@ import {
   setStudentRep,
   setStudentSuspended,
 } from '@/services/roster';
-import { Badge, Button, ConfirmButton, EmptyState, ErrorAlert, PageLoader, SelectField, TextField } from '@/components/ui';
+import {
+  Badge,
+  Button,
+  ConfirmButton,
+  EmptyState,
+  ErrorAlert,
+  PageLoader,
+  SelectField,
+  StatusPill,
+  StudentCell,
+  TextField,
+} from '@/components/ui';
 import { ProgressBar } from '@/components/saas';
+import { PlusIcon, UploadIcon } from '@/components/icons';
 import { AppError, toAppError } from '@/lib/errors';
 import { pluralize } from '@/lib/format';
 import { RosterImport } from './RosterImport';
@@ -106,15 +118,20 @@ export function RosterTab({ classId }: { classId: string }) {
             <h2>Student Roster & Phone Claims</h2>
             {list.length > 0 && (
               <p className="muted small">
-                {pluralize(list.length, 'student')} · {claimed} ready ({repCount} Class {repCount === 1 ? 'Rep' : 'Reps'} auto-marked present)
+                {pluralize(list.length, 'student')} · {claimed} ready ({repCount} Class{' '}
+                {repCount === 1 ? 'Rep' : 'Reps'} auto-marked present)
               </p>
             )}
           </div>
           {mode === 'none' && (
             <div className="row">
-              <Button onClick={() => setMode('import')}>Import CSV / Excel</Button>
+              <Button onClick={() => setMode('import')}>
+                <UploadIcon size={14} />
+                <span>Import CSV / Excel</span>
+              </Button>
               <Button variant="secondary" onClick={() => setMode('add')}>
-                + Add student
+                <PlusIcon size={14} />
+                <span>Add student</span>
               </Button>
             </div>
           )}
@@ -162,7 +179,12 @@ export function RosterTab({ classId }: { classId: string }) {
       {list.length === 0 && mode === 'none' && !students.error && (
         <EmptyState
           title="No students yet"
-          action={<Button onClick={() => setMode('import')}>Import a CSV or Excel file</Button>}
+          action={
+            <Button onClick={() => setMode('import')}>
+              <UploadIcon size={14} />
+              <span>Import a CSV or Excel file</span>
+            </Button>
+          }
         >
           Upload the class list with each student's name and matric number. Students use these to claim their account, and Class Reps are automatically marked present.
         </EmptyState>
@@ -195,7 +217,7 @@ export function RosterTab({ classId }: { classId: string }) {
             <table className="table">
               <thead>
                 <tr>
-                  <th>Name</th>
+                  <th>Student Name</th>
                   <th>Matric No</th>
                   <th>Status</th>
                   <th className="actions-col">
@@ -207,23 +229,22 @@ export function RosterTab({ classId }: { classId: string }) {
                 {filtered.map((s) => (
                   <tr key={s.id}>
                     <td>
-                      <div className="row" style={{ gap: '0.5rem' }}>
-                        <span className={s.suspended ? 'muted' : undefined}>
-                          <strong>{s.full_name}</strong>
-                        </span>
-                        {s.is_rep && <Badge tone="live">Class Rep</Badge>}
-                      </div>
+                      <StudentCell
+                        name={s.full_name}
+                        muted={s.suspended}
+                        badges={s.is_rep ? <Badge tone="live">Class Rep</Badge> : undefined}
+                      />
                     </td>
                     <td className="mono">{s.matric_no}</td>
                     <td>
                       {s.suspended ? (
-                        <Badge tone="muted">Suspended</Badge>
+                        <StatusPill status="absent" label="Suspended" />
                       ) : s.is_rep ? (
-                        <Badge tone="ok">Auto-Present (Rep)</Badge>
+                        <StatusPill status="present" label="Auto-Present (Rep)" />
                       ) : s.user_id ? (
-                        <Badge tone="ok">Claimed</Badge>
+                        <StatusPill status="present" label="Claimed" />
                       ) : (
-                        <Badge tone="muted">Unclaimed</Badge>
+                        <StatusPill status="late" label="Unclaimed" />
                       )}
                     </td>
                     <td className="actions-col">

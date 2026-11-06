@@ -15,7 +15,23 @@ import {
   markPresent,
   removeAttendance,
 } from '@/services/sessions';
-import { Badge, Button, ConfirmButton, ErrorAlert, PageHeader, PageLoader, TextField } from '@/components/ui';
+import {
+  Badge,
+  Button,
+  ConfirmButton,
+  ErrorAlert,
+  PageHeader,
+  PageLoader,
+  StatusPill,
+  StudentCell,
+  TextField,
+} from '@/components/ui';
+import {
+  MessageSquareIcon,
+  QrCodeIcon,
+  XIcon,
+  ZapIcon,
+} from '@/components/icons';
 import { toAppError } from '@/lib/errors';
 import { formatDate, formatTime, isOpen, timeLeft } from '@/lib/format';
 import type { Attendance, Session, Student } from '@/types';
@@ -34,7 +50,7 @@ export default function LiveSessionPage() {
   const [overrideActive, setOverrideActive] = useState(false);
   const [secretCount, setSecretCount] = useState(0);
 
-  // New Modals for Attendance Management Features
+  // Modals for Attendance Management Features
   const [showQrModal, setShowQrModal] = useState(false);
   const [showBatchModal, setShowBatchModal] = useState(false);
   const [selectedBatchIds, setSelectedBatchIds] = useState<string[]>([]);
@@ -205,21 +221,25 @@ export default function LiveSessionPage() {
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(joinUrl)}`;
 
   return (
-    <div className="container">
+    <div className="container stack">
       <PageHeader
+        eyebrow={`${klass.name} · Live Roll-Call`}
         title={`${session.course_code} · Week ${session.week}`}
-        subtitle={`${session.venue} · ${formatDate(session.starts_at)}, ${formatTime(session.starts_at)} · ${session.radius_m} m radius`}
+        subtitle={`${session.venue} · ${formatDate(session.starts_at)}, ${formatTime(session.starts_at)} · ${session.radius_m} m GPS radius`}
         back={{ to: `/rep/class/${klass.id}`, label: klass.name }}
         actions={
           <div className="row">
             <Button variant="secondary" size="sm" onClick={() => setShowQrModal(true)}>
-              📺 Broadcast QR
+              <QrCodeIcon size={14} />
+              <span>Broadcast QR</span>
             </Button>
             <Button variant="secondary" size="sm" onClick={() => setShowBatchModal(true)}>
-              ⚡ Batch Roll-Call
+              <ZapIcon size={14} />
+              <span>Batch Roll-Call</span>
             </Button>
             <Button variant="secondary" size="sm" onClick={handleShareWhatsAppReport}>
-              💬 WhatsApp Report
+              <MessageSquareIcon size={14} />
+              <span>WhatsApp Report</span>
             </Button>
             <Button variant="secondary" size="sm" onClick={() => extend.run(10)} loading={extend.pending}>
               {live ? '+10 min' : 'Reopen 10 min'}
@@ -238,7 +258,12 @@ export default function LiveSessionPage() {
 
       <section className="session-summary">
         <div>
-          <p className="summary-count" onClick={triggerSecret} style={{ cursor: 'pointer', userSelect: 'none' }} title="Session statistics">
+          <p
+            className="summary-count"
+            onClick={triggerSecret}
+            style={{ cursor: 'pointer', userSelect: 'none' }}
+            title="Session statistics"
+          >
             <strong>{presentCount}</strong> <span className="muted">of {totalCount} present</span>
           </p>
         </div>
@@ -246,7 +271,11 @@ export default function LiveSessionPage() {
           <Button size="sm" variant="ghost" onClick={() => setOverrideActive((v) => !v)}>
             {overrideActive ? 'Hide staff overrides' : 'Manual override'}
           </Button>
-          {live ? <Badge tone="live">Open · {timeLeft(session.ends_at, now)}</Badge> : <Badge tone="muted">Closed</Badge>}
+          {live ? (
+            <Badge tone="live">Open · {timeLeft(session.ends_at, now)}</Badge>
+          ) : (
+            <Badge tone="muted">Closed</Badge>
+          )}
         </div>
       </section>
 
@@ -278,7 +307,7 @@ export default function LiveSessionPage() {
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Name or matric number"
+          placeholder="Name or matric number…"
         />
       </div>
 
@@ -286,9 +315,9 @@ export default function LiveSessionPage() {
         <table className="table">
           <thead>
             <tr>
-              <th>Name</th>
+              <th>Student Name</th>
               <th>Matric No</th>
-              <th>Status</th>
+              <th>Attendance Status</th>
               {overrideActive && (
                 <th className="actions-col">
                   <span>Actions & Excuses</span>
@@ -308,29 +337,33 @@ export default function LiveSessionPage() {
               return (
                 <tr key={s.id}>
                   <td>
-                    <div className="row" style={{ gap: '0.5rem' }}>
-                      <span>{s.full_name}</span>
-                      {s.is_rep && <Badge tone="live">Class Rep</Badge>}
-                    </div>
+                    <StudentCell
+                      name={s.full_name}
+                      badges={s.is_rep ? <Badge tone="live">Class Rep</Badge> : undefined}
+                    />
                   </td>
                   <td className="mono">{s.matric_no}</td>
                   <td>
                     {row ? (
                       isExcused ? (
-                        <span className="status-present" style={{ color: 'var(--warn)' }}>
-                          Excused {row.notes ? `(${row.notes})` : ''}
-                        </span>
+                        <StatusPill
+                          status="excused"
+                          label={`Excused${row.notes ? ` · ${row.notes}` : ''}`}
+                        />
                       ) : isLate ? (
-                        <span className="status-present" style={{ color: 'var(--warn)' }}>
-                          Late · {formatTime(row.checked_in_at)}
-                        </span>
+                        <StatusPill status="late" label={`Late · ${formatTime(row.checked_in_at)}`} />
                       ) : (
-                        <span className="status-present">
-                          Present · {s.is_rep && !row.manual ? 'Auto (Class Rep)' : formatTime(row.checked_in_at)}
-                        </span>
+                        <StatusPill
+                          status="present"
+                          label={
+                            s.is_rep && !row.manual
+                              ? 'Present · Auto (Rep)'
+                              : `Present · ${formatTime(row.checked_in_at)}`
+                          }
+                        />
                       )
                     ) : (
-                      <span className="muted">Absent</span>
+                      <StatusPill status="absent" />
                     )}
                   </td>
                   {overrideActive && (
@@ -385,20 +418,40 @@ export default function LiveSessionPage() {
       {/* 1. Full-Screen Broadcast QR & Projector Mode Modal */}
       {showQrModal && (
         <div className="cmd-backdrop" onClick={() => setShowQrModal(false)} role="dialog" aria-modal="true">
-          <div className="cmd-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px', textAlign: 'center', padding: '1.75rem' }}>
+          <div
+            className="cmd-modal"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: '480px', textAlign: 'center', padding: '1.75rem' }}
+          >
             <h2>{session.course_code} · Live Check-In</h2>
             <p className="muted small" style={{ marginTop: '0.25rem' }}>
               Venue: {session.venue} · {session.radius_m}m GPS Radius
             </p>
-            <div style={{ margin: '1.25rem auto', padding: '1rem', background: '#fff', borderRadius: '12px', width: 'fit-content', border: '1px solid var(--border)' }}>
-              <img src={qrUrl} alt="Session QR Code" width="260" height="260" style={{ display: 'block', borderRadius: '8px' }} />
+            <div
+              style={{
+                margin: '1.25rem auto',
+                padding: '1rem',
+                background: '#fff',
+                borderRadius: '12px',
+                width: 'fit-content',
+                border: '1px solid var(--border)',
+              }}
+            >
+              <img
+                src={qrUrl}
+                alt="Session QR Code"
+                width="260"
+                height="260"
+                style={{ display: 'block', borderRadius: '8px' }}
+              />
             </div>
             <div className="stack" style={{ gap: '0.5rem' }}>
               <p className="mono" style={{ fontSize: '1.5rem', fontWeight: 800, letterSpacing: '0.12em' }}>
                 CODE: {klass.join_code}
               </p>
               <p className="small muted">
-                Students can scan this QR code or visit <strong className="mono">{window.location.origin}/join</strong> and enter the 6-character code.
+                Students can scan this QR code or visit <strong className="mono">{window.location.origin}/join</strong>{' '}
+                and enter the 6-character code.
               </p>
             </div>
             <div style={{ marginTop: '1.25rem' }}>
@@ -413,21 +466,27 @@ export default function LiveSessionPage() {
       {/* 2. Emergency Rapid Batch Roll-Call Modal */}
       {showBatchModal && (
         <div className="cmd-backdrop" onClick={() => setShowBatchModal(false)} role="dialog" aria-modal="true">
-          <div className="cmd-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '580px', padding: '1.5rem' }}>
+          <div
+            className="cmd-modal"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: '580px', padding: '1.5rem' }}
+          >
             <div className="section-head">
               <div>
                 <h2>Emergency Rapid Batch Roll-Call</h2>
                 <p className="muted small">Quickly mark multiple absent students present in bulk.</p>
               </div>
               <Button size="sm" variant="ghost" onClick={() => setShowBatchModal(false)}>
-                ✕
+                <XIcon size={15} />
               </Button>
             </div>
             <div className="row" style={{ margin: '0.75rem 0', gap: '0.5rem' }}>
               <Button
                 size="sm"
                 variant="secondary"
-                onClick={() => setSelectedBatchIds(students.filter((s) => !byStudent.has(s.id)).map((s) => s.id))}
+                onClick={() =>
+                  setSelectedBatchIds(students.filter((s) => !byStudent.has(s.id)).map((s) => s.id))
+                }
               >
                 Select all absent ({Math.max(0, totalCount - presentCount)})
               </Button>
@@ -435,12 +494,28 @@ export default function LiveSessionPage() {
                 Clear selection
               </Button>
             </div>
-            <div style={{ maxHeight: '280px', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.5rem' }}>
+            <div
+              style={{
+                maxHeight: '280px',
+                overflowY: 'auto',
+                border: '1px solid var(--border)',
+                borderRadius: '8px',
+                padding: '0.5rem',
+              }}
+            >
               {students.map((s) => {
                 const already = byStudent.has(s.id);
                 const checked = selectedBatchIds.includes(s.id);
                 return (
-                  <label key={s.id} className="row" style={{ padding: '0.35rem 0.5rem', cursor: 'pointer', borderBottom: '1px solid var(--border-subtle, #eee)' }}>
+                  <label
+                    key={s.id}
+                    className="row"
+                    style={{
+                      padding: '0.42rem 0.55rem',
+                      cursor: 'pointer',
+                      borderBottom: '1px solid var(--border-subtle)',
+                    }}
+                  >
                     <input
                       type="checkbox"
                       checked={already || checked}
@@ -450,7 +525,7 @@ export default function LiveSessionPage() {
                         else setSelectedBatchIds((prev) => prev.filter((id) => id !== s.id));
                       }}
                     />
-                    <span style={{ flex: 1, fontSize: '0.9rem' }}>
+                    <span style={{ flex: 1, fontSize: '0.88rem' }}>
                       {s.full_name} <span className="mono muted small">({s.matric_no})</span>
                     </span>
                     {already && <Badge tone="ok">Already Present</Badge>}
@@ -473,7 +548,11 @@ export default function LiveSessionPage() {
       {/* 3. Excused Absence Reason Modal */}
       {excuseStudent && (
         <div className="cmd-backdrop" onClick={() => setExcuseStudent(null)} role="dialog" aria-modal="true">
-          <div className="cmd-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '420px', padding: '1.5rem' }}>
+          <div
+            className="cmd-modal"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: '420px', padding: '1.5rem' }}
+          >
             <h3>Log Excused Absence</h3>
             <p className="muted small" style={{ margin: '0.35rem 0 1rem' }}>
               Student: <strong>{excuseStudent.full_name}</strong> ({excuseStudent.matric_no})

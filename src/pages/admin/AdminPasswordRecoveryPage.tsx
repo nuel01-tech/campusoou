@@ -53,7 +53,10 @@ export default function AdminPasswordRecoveryPage({ mode }: { mode: Mode }) {
     });
     setBusy(false);
     if (resetError) setError(resetError.message);
-    else setMessage('If this email belongs to an account, a password reset link has been sent. Check your inbox and spam folder.');
+    else
+      setMessage(
+        'If this email belongs to an account, a password reset link has been sent. Check your inbox and spam folder.',
+      );
   };
 
   const savePassword = async (event: FormEvent) => {
@@ -82,40 +85,77 @@ export default function AdminPasswordRecoveryPage({ mode }: { mode: Mode }) {
   };
 
   return (
-    <div className="container narrow">
+    <div className="container narrow stack">
       <PageHeader
+        eyebrow="Account Recovery"
         title={mode === 'request' ? 'Reset Super Admin Password' : 'Choose a New Password'}
-        subtitle={mode === 'request' ? 'We will email you a secure password-reset link.' : 'Set a new password for your existing Super Admin account.'}
+        subtitle={
+          mode === 'request'
+            ? 'We will email you a secure password-reset link.'
+            : 'Set a new password for your existing Super Admin account.'
+        }
         back={{ to: '/admin/login', label: 'Back to Super Admin sign in' }}
       />
 
       {mode === 'request' ? (
         <form onSubmit={requestReset} noValidate className="panel stack">
-          <TextField label="Super Admin email address" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required />
+          <TextField
+            label="Super Admin email address"
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            autoComplete="email"
+            required
+          />
           {error && <Alert tone="error">{error}</Alert>}
           {message && <Alert tone="success">{message}</Alert>}
-          <Button type="submit" size="lg" block loading={busy} disabled={!email.trim()}>Send reset link</Button>
+          <Button type="submit" size="lg" block loading={busy} disabled={!email.trim()}>
+            Send reset link
+          </Button>
         </form>
+      ) : checking ? (
+        <Alert tone="info">Verifying your secure reset link…</Alert>
+      ) : !recoveryReady ? (
+        <div className="panel stack">
+          <Alert tone="warning" title="Reset link not verified">
+            Open the newest password-reset email on this device. If the link has expired, request a new one.
+          </Alert>
+          <Link to="/admin/forgot-password">Request another reset link</Link>
+        </div>
       ) : (
-        checking ? (
-          <Alert tone="info">Verifying your secure reset link…</Alert>
-        ) : !recoveryReady ? (
-          <div className="panel stack">
-            <Alert tone="warning" title="Reset link not verified">
-              Open the newest password-reset email on this device. If the link has expired, request a new one.
-            </Alert>
-            <Link to="/admin/forgot-password">Request another reset link</Link>
-          </div>
-        ) : (
-          <form onSubmit={savePassword} noValidate className="panel stack">
-            <TextField label="New password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" required />
-            <TextField label="Confirm new password" type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" required />
-            {error && <Alert tone="error">{error}</Alert>}
-            {message && <Alert tone="success">{message}</Alert>}
-            <Button type="submit" size="lg" block loading={busy} disabled={!password || !confirmPassword}>Update password</Button>
-            {message && <Button type="button" variant="secondary" block onClick={() => navigate('/admin/login', { replace: true })}>Return to sign in</Button>}
-          </form>
-        )
+        <form onSubmit={savePassword} noValidate className="panel stack">
+          <TextField
+            label="New password"
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            autoComplete="new-password"
+            required
+          />
+          <TextField
+            label="Confirm new password"
+            type="password"
+            value={confirmPassword}
+            onChange={(event) => setConfirmPassword(event.target.value)}
+            autoComplete="new-password"
+            required
+          />
+          {error && <Alert tone="error">{error}</Alert>}
+          {message && <Alert tone="success">{message}</Alert>}
+          <Button type="submit" size="lg" block loading={busy} disabled={!password || !confirmPassword}>
+            Update password
+          </Button>
+          {message && (
+            <Button
+              type="button"
+              variant="secondary"
+              block
+              onClick={() => navigate('/admin/login', { replace: true })}
+            >
+              Return to sign in
+            </Button>
+          )}
+        </form>
       )}
     </div>
   );

@@ -69,8 +69,9 @@ export default function AdminAuthPage({ initialTab = 'signin' }: { initialTab?: 
   };
 
   return (
-    <div className="container narrow">
+    <div className="container narrow stack">
       <PageHeader
+        eyebrow="University Governance"
         title="Super Admin Portal"
         subtitle="Manage department Class Representatives and system access."
         back={{ to: '/', label: 'CampusPulse home' }}

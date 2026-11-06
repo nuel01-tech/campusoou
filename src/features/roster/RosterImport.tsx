@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { useAction } from '@/hooks/useAsync';
 import { importRoster } from '@/services/roster';
 import { Alert, Button, ErrorAlert } from '@/components/ui';
+import { UploadIcon } from '@/components/icons';
 import { toAppError, type AppError } from '@/lib/errors';
 import { pluralize } from '@/lib/format';
 import { parseRoster, type ParsedRoster } from './parseRoster';
@@ -50,11 +51,13 @@ export function RosterImport({ classId, existingCount, onDone }: Props) {
 
   return (
     <section className="panel stack">
-      <h3>Import class list</h3>
-      <p className="muted small">
-        CSV or Excel with a <strong>name</strong> column and a <strong>matric number</strong> column. Separate
-        Surname / First name columns also work. Other columns are ignored.
-      </p>
+      <div>
+        <h3>Import Class List (CSV / Excel)</h3>
+        <p className="muted small" style={{ marginTop: '0.2rem' }}>
+          CSV or Excel with a <strong>Name</strong> column and a <strong>Matric Number</strong> column. Separate
+          Surname / First name columns also work. Other columns are ignored.
+        </p>
+      </div>
 
       <label className="dropzone">
         <input
@@ -64,8 +67,13 @@ export function RosterImport({ classId, existingCount, onDone }: Props) {
           onChange={(e) => pick(e.target.files?.[0])}
           className="sr-only"
         />
-        <span className="dropzone-action">{reading ? 'Reading…' : fileName ? 'Choose another file' : 'Choose file'}</span>
-        <span className="muted small">{fileName || '.csv, .xlsx or .xls — up to 5 MB'}</span>
+        <span className="dropzone-icon" aria-hidden="true">
+          <UploadIcon size={18} />
+        </span>
+        <span className="dropzone-action">
+          {reading ? 'Reading spreadsheet…' : fileName ? 'Choose another file' : 'Choose CSV or Excel file'}
+        </span>
+        <span className="muted small">{fileName || 'Supports .csv, .xlsx or .xls — up to 5 MB'}</span>
       </label>
 
       <ErrorAlert error={readError} />
@@ -76,7 +84,8 @@ export function RosterImport({ classId, existingCount, onDone }: Props) {
             <>
               <p>
                 Found <strong>{pluralize(entries.length, 'student')}</strong>.
-                {existingCount > 0 && ' Existing students with the same matric number will have their name updated; nobody is removed.'}
+                {existingCount > 0 &&
+                  ' Existing students with the same matric number will have their name updated; nobody is removed.'}
               </p>
               <div className="table-wrap">
                 <table className="table table-compact">

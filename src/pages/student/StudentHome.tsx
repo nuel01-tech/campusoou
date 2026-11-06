@@ -15,8 +15,25 @@ import {
   registerDevicePasskey,
 } from '@/lib/webauthn';
 import { CheckInCard } from '@/features/checkin/CheckInCard';
-import { Alert, Badge, Button, EmptyState, ErrorAlert, PageHeader, PageLoader } from '@/components/ui';
+import {
+  Alert,
+  Badge,
+  Button,
+  EmptyState,
+  ErrorAlert,
+  PageHeader,
+  PageLoader,
+  StatusPill,
+} from '@/components/ui';
 import { KpiStatGrid, VerticalTabs, type VerticalTabItem } from '@/components/saas';
+import {
+  CalendarDaysIcon,
+  ClipboardCheckIcon,
+  KeyRoundIcon,
+  RefreshCwIcon,
+  ShieldCheckIcon,
+  SmartphoneIcon,
+} from '@/components/icons';
 import { formatDate, formatTime, isOpen } from '@/lib/format';
 import type { Attendance } from '@/types';
 
@@ -57,7 +74,8 @@ function StudentDashboard() {
 
   const refresh = useCallback(() => {
     void sessions.reload({ silent: true });
-  }, [sessions]);
+    void history.reload({ silent: true });
+  }, [sessions, history]);
   usePolling(refresh, 15_000, Boolean(classId));
 
   // For students who claimed before the mandatory passkey-on-claim upgrade:
@@ -133,42 +151,50 @@ function StudentDashboard() {
       label: 'Live Check-In',
       description: 'Open lecture sessions right now',
       badge: open.length,
+      icon: <ClipboardCheckIcon size={16} />,
     },
     {
       key: 'history',
       label: 'Attendance History',
       description: 'Your verified check-in log',
       badge: checkIns.length,
+      icon: <CalendarDaysIcon size={16} />,
     },
     {
       key: 'device',
       label: 'My Passkey & Device',
       description: 'Bound phone & biometric status',
+      icon: <KeyRoundIcon size={16} />,
     },
   ];
 
   return (
     <div className="container stack-lg">
       <PageHeader
+        eyebrow="Student Attendance Workspace"
         title={student.full_name}
         subtitle={
           <span className="row" style={{ marginTop: '0.25rem', gap: '0.45rem' }}>
             <Badge tone="neutral">{className}</Badge>
             <span className="mono muted small">{student.matric_no}</span>
+            {student.is_rep && <Badge tone="live">Class Rep · Auto-Present</Badge>}
             {student.suspended ? (
-              <Badge tone="muted">Suspended</Badge>
+              <Badge tone="danger">Suspended</Badge>
             ) : needsInitialPasskeyBind ? (
-              <Badge tone="muted">Passkey Pending</Badge>
+              <Badge tone="warn">Passkey Pending</Badge>
             ) : deviceMismatch ? (
-              <Badge tone="muted">Device Mismatch</Badge>
+              <Badge tone="danger">Device Mismatch</Badge>
             ) : (
-              <Badge tone="ok">Passkey & Phone Locked</Badge>
+              <Badge tone="ok" icon={<ShieldCheckIcon size={12} />}>
+                Passkey & Phone Locked
+              </Badge>
             )}
           </span>
         }
         actions={
           <Button variant="secondary" size="sm" onClick={refresh} disabled={sessions.loading}>
-            Refresh sessions
+            <RefreshCwIcon size={14} />
+            <span>Refresh</span>
           </Button>
         }
       />
@@ -211,7 +237,7 @@ function StudentDashboard() {
           {
             label: 'Lectures Attended',
             value: checkIns.length,
-            sublabel: 'Total verified check-ins',
+            sublabel: 'Total verified lecture check-ins',
             tone: 'accent',
           },
           {
@@ -223,6 +249,12 @@ function StudentDashboard() {
                 : 'Strictly Bound',
             sublabel: '1 Phone = 1 Student (No Incognito)',
             tone: !needsInitialPasskeyBind && !deviceMismatch ? 'ok' : 'warn',
+          },
+          {
+            label: 'Matric Number',
+            value: student.matric_no,
+            sublabel: className,
+            tone: 'purple',
           },
         ]}
       />
@@ -242,14 +274,15 @@ function StudentDashboard() {
             <section className="panel stack">
               <div className="section-head">
                 <div>
-                  <h2>Open Lecture Sessions</h2>
+                  <h2>Live Lecture Check-In</h2>
                   <p className="muted small">
                     Be inside the lecture venue and verify with your bound phone Passkey before the timer closes.
                   </p>
                 </div>
-                <button className="link-button" onClick={refresh} disabled={sessions.loading}>
-                  Refresh
-                </button>
+                <Button variant="ghost" size="sm" onClick={refresh} disabled={sessions.loading}>
+                  <RefreshCwIcon size={13} />
+                  <span>Refresh</span>
+                </Button>
               </div>
 
               <ErrorAlert error={sessions.error} onRetry={() => sessions.reload()} />
@@ -272,7 +305,7 @@ function StudentDashboard() {
                 <PageLoader label="Checking for sessions" />
               ) : open.length === 0 ? (
                 <EmptyState title="No session is open right now">
-                  When your class rep starts a session, it will appear here automatically.
+                  When your Class Representative starts a lecture session, it will appear here automatically.
                 </EmptyState>
               ) : (
                 <div className="stack">
@@ -293,57 +326,127 @@ function StudentDashboard() {
 
           {activeTab === 'history' && (
             <section className="panel stack">
-              <div>
-                <h2>Your Verified Check-Ins</h2>
-                <p className="muted small">Complete log of lectures you have checked into from this device.</p>
+              <div className="section-head">
+                <div>
+                  <h2>Attendance History</h2>
+                  <p className="muted small">
+                    Complete log of lectures you have checked into from this device.
+                  </p>
+                </div>
+                <Badge tone="ok">{checkIns.length} Verified</Badge>
               </div>
 
               <ErrorAlert error={history.error} onRetry={() => history.reload()} />
 
               {checkIns.length === 0 ? (
                 <EmptyState title="No check-ins recorded yet">
-                  Once you check in to an open lecture session, it will be listed here.
+                  Once you check in to an open lecture session, it will be listed here with course, week, and timestamp.
                 </EmptyState>
               ) : (
-                <ul className="history">
-                  {checkIns.map((c) => (
-                    <li key={c.id}>
-                      <span className="history-course">{c.session!.course_code}</span>
-                      <Badge tone="ok">Week {c.session!.week}</Badge>
-                      <span className="history-when">
-                        {formatDate(c.checked_in_at)}, {formatTime(c.checked_in_at)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                <div className="table-wrap">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Course</th>
+                        <th>Venue</th>
+                        <th className="num">Week</th>
+                        <th>Date & Time</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {checkIns.map((c) => {
+                        const st =
+                          c.status === 'late'
+                            ? 'late'
+                            : c.status === 'excused'
+                              ? 'excused'
+                              : 'present';
+                        return (
+                          <tr key={c.id}>
+                            <td>
+                              <strong>{c.session!.course_code}</strong>
+                            </td>
+                            <td className="muted">{c.session!.venue || 'Lecture Hall'}</td>
+                            <td className="num mono">Week {c.session!.week}</td>
+                            <td className="nowrap muted">
+                              {formatDate(c.checked_in_at)}, {formatTime(c.checked_in_at)}
+                            </td>
+                            <td>
+                              <StatusPill status={st} />
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </section>
           )}
 
           {activeTab === 'device' && (
             <section className="panel stack">
-              <h2>Bound Phone & Passkey Security</h2>
-              <div className="stack-xs">
-                <p>
-                  <strong>Student Name:</strong> {student.full_name}
-                </p>
-                <p>
-                  <strong>Matric Number:</strong> <span className="mono">{student.matric_no}</span>
-                </p>
-                <p>
-                  <strong>Enrolled Cohort:</strong> {className}
-                </p>
-                <p>
-                  <strong>Hardware Passkey ID:</strong>{' '}
-                  <span className="mono">
-                    {student.passkey_id ? `${student.passkey_id.slice(0, 16)}…` : 'Not bound yet'}
-                  </span>
-                </p>
-                <p>
-                  <strong>Incognito Protection:</strong>{' '}
-                  <Badge tone="ok">Enforced (Normal Mode Only)</Badge>
-                </p>
+              <div className="section-head">
+                <div>
+                  <h2>Bound Phone & Passkey Security</h2>
+                  <p className="muted small">
+                    Cryptographic hardware binding protecting your matric number against proxy check-ins.
+                  </p>
+                </div>
+                <Badge
+                  tone={!needsInitialPasskeyBind && !deviceMismatch ? 'ok' : 'warn'}
+                  icon={<SmartphoneIcon size={12} />}
+                >
+                  {!needsInitialPasskeyBind && !deviceMismatch ? 'Device Verified' : 'Attention Needed'}
+                </Badge>
               </div>
+
+              <div className="table-wrap">
+                <table className="table">
+                  <tbody>
+                    <tr>
+                      <th style={{ width: '210px' }}>Student Name</th>
+                      <td>
+                        <strong>{student.full_name}</strong>
+                      </td>
+                    </tr>
+                    <tr>
+                      <th>Matric Number</th>
+                      <td className="mono">{student.matric_no}</td>
+                    </tr>
+                    <tr>
+                      <th>Enrolled Cohort</th>
+                      <td>{className}</td>
+                    </tr>
+                    <tr>
+                      <th>Hardware Passkey ID</th>
+                      <td className="mono">
+                        {student.passkey_id ? `${student.passkey_id.slice(0, 18)}…` : 'Not bound yet'}
+                      </td>
+                    </tr>
+                    <tr>
+                      <th>Device Vault Token</th>
+                      <td>
+                        {deviceMismatch ? (
+                          <Badge tone="danger">Mismatch with this browser</Badge>
+                        ) : student.device_token ? (
+                          <Badge tone="ok">Matched & Verified</Badge>
+                        ) : (
+                          <Badge tone="warn">Pending Setup</Badge>
+                        )}
+                      </td>
+                    </tr>
+                    <tr>
+                      <th>Incognito Protection</th>
+                      <td>
+                        <Badge tone="ok">Enforced (Normal Mode Only)</Badge>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
               <p className="muted small">
                 Your matric number is cryptographically locked to this phone’s hardware Passkey and persistent device vault. It will not work on another student’s phone or in Incognito mode. If you change or lose your phone, ask your Class Rep to click <strong>Reset phone</strong> next to your name on the class roster.
               </p>
