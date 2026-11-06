@@ -126,11 +126,16 @@ create table if not exists public.classes (
   id              uuid primary key default gen_random_uuid(),
   owner_id        uuid not null default auth.uid() references auth.users (id) on delete cascade,
   name            text not null check (char_length(trim(name)) between 2 and 120),
+  department_id   uuid references public.departments (id) on delete set null,
+  level           text,
   join_code       text not null unique default public.random_join_code(),
   semester_start  date,
   created_at      timestamptz not null default now()
 );
+alter table public.classes add column if not exists department_id uuid references public.departments (id) on delete set null;
+alter table public.classes add column if not exists level text;
 create index if not exists classes_owner_idx on public.classes (owner_id);
+create index if not exists classes_department_idx on public.classes (department_id);
 
 create table if not exists public.students (
   id          uuid primary key default gen_random_uuid(),

@@ -35,10 +35,15 @@ export default function ClassPage() {
 
   const c = klass.data;
   const onUpdated = (updated: ClassRoom) => klass.setData(updated);
+  const meta = [c.department_name, c.level].filter(Boolean).join(' · ');
 
   return (
     <div className="container">
-      <PageHeader title={c.name} back={{ to: '/rep', label: 'All classes' }} />
+      <PageHeader
+        title={c.name}
+        subtitle={meta || undefined}
+        back={{ to: '/rep', label: 'All classes' }}
+      />
       <ShareClass code={c.join_code} />
 
       <nav className="tabs" aria-label="Class sections">

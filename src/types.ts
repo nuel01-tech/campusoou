@@ -47,6 +47,9 @@ export interface ClassRoom {
   id: string;
   owner_id: string;
   name: string;
+  department_id?: string | null;
+  department_name?: string | null;
+  level?: string | null;
   join_code: string;
   semester_start: string | null; // ISO date (yyyy-mm-dd)
   created_at: string;
