@@ -281,28 +281,41 @@ export function Shell({ children }: { children: ReactNode }) {
 
       <aside className={`saas-sidebar ${mobileMenuOpen ? 'is-open' : ''}`} aria-label="Primary Sidebar">
         <div className="saas-sidebar-top">
-          <Link to={homePath} className="saas-brand">
-            <span className="saas-brand-mark" aria-hidden="true">
-              CP
-            </span>
-            <div className="saas-brand-text">
-              <span className="saas-brand-name">CampusPulse</span>
-              <span className="saas-brand-role">
-                {role === 'super_admin'
-                  ? 'Super Admin Suite'
-                  : role === 'rep'
-                    ? profile?.level
-                      ? `Class Rep · ${profile.level}`
-                      : 'Class Rep Suite'
-                    : 'Student Portal'}
+          <div className="saas-brand-row">
+            <Link to={homePath} className="saas-brand">
+              <span className="saas-brand-mark" aria-hidden="true">
+                CP
               </span>
-            </div>
-          </Link>
+              <div className="saas-brand-text">
+                <span className="saas-brand-name">CampusPulse</span>
+                <span className="saas-brand-role">
+                  {role === 'super_admin'
+                    ? 'Super Admin Suite'
+                    : role === 'rep'
+                      ? profile?.level
+                        ? `Class Rep · ${profile.level}`
+                        : 'Class Rep Suite'
+                      : 'Student Portal'}
+                </span>
+              </div>
+            </Link>
+            <button
+              type="button"
+              className="saas-sidebar-close"
+              onClick={() => setMobileMenuOpen(false)}
+              aria-label="Close navigation menu"
+            >
+              ✕
+            </button>
+          </div>
 
           <button
             type="button"
             className="saas-cmd-trigger"
-            onClick={() => setCmdOpen(true)}
+            onClick={() => {
+              setMobileMenuOpen(false);
+              setCmdOpen(true);
+            }}
             title="Quick Jump (Ctrl+K)"
           >
             <span>Quick jump…</span>
@@ -391,9 +404,8 @@ export function Shell({ children }: { children: ReactNode }) {
               ☰ Menu
             </button>
             <div className="saas-breadcrumbs">
-              <span className="muted small">CampusPulse</span>
-              <span className="muted small">/</span>
-              <strong className="small">
+              <span className="muted small saas-breadcrumb-root">CampusPulse /</span>
+              <strong className="small saas-breadcrumb-current">
                 {role === 'super_admin'
                   ? 'Super Admin Console'
                   : role === 'rep'
@@ -408,21 +420,45 @@ export function Shell({ children }: { children: ReactNode }) {
           <div className="saas-topbar-right">
             <span className="saas-status-pill">
               <span className="saas-status-dot" />
-              Live Sync
+              <span className="saas-status-text">Live Sync</span>
             </span>
             {role === 'super_admin' && <Badge tone="ok">Super Admin</Badge>}
             {role === 'rep' && profile?.level && <Badge tone="neutral">{profile.level}</Badge>}
             <button
               type="button"
-              className="btn btn-secondary btn-sm"
+              className="btn btn-secondary btn-sm saas-search-btn"
               onClick={() => setCmdOpen(true)}
             >
-              <span>Search / Jump</span>
+              <span>Search</span>
             </button>
           </div>
         </header>
 
         <main className="saas-main">{children}</main>
+
+        <nav className="saas-mobile-bottomnav" aria-label="Mobile quick navigation">
+          {(classSubNav.length > 0 ? classSubNav : primaryNav).slice(0, 4).map((item) => {
+            const active = item.match(location.pathname, searchParams);
+            return (
+              <Link
+                key={item.id}
+                to={item.to}
+                className={`saas-mobile-tab ${active ? 'is-active' : ''}`}
+              >
+                <span className="saas-mobile-tab-dot" aria-hidden="true" />
+                <span className="saas-mobile-tab-label">{item.label}</span>
+              </Link>
+            );
+          })}
+          <button
+            type="button"
+            className={`saas-mobile-tab ${mobileMenuOpen ? 'is-active' : ''}`}
+            onClick={() => setMobileMenuOpen((v) => !v)}
+          >
+            <span className="saas-mobile-tab-dot" aria-hidden="true" />
+            <span className="saas-mobile-tab-label">More</span>
+          </button>
+        </nav>
       </div>
 
       <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} items={commands} />

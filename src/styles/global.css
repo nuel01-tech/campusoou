@@ -41,11 +41,13 @@ html {
   color: var(--ink);
   font-family: var(--font-sans);
   line-height: 1.5;
+  overflow-x: hidden;
 }
 
 body {
   margin: 0;
   min-height: 100dvh;
+  overflow-x: hidden;
 }
 
 h1,
@@ -148,11 +150,24 @@ code,
 .stack {
   display: grid;
   gap: 1rem;
+  min-width: 0;
 }
 
 .stack-lg {
   display: grid;
   gap: 1.75rem;
+  min-width: 0;
+}
+
+.stack > *,
+.stack-lg > *,
+.stack-xs > *,
+.panel > *,
+.vtabs-layout > *,
+.saas-layout > *,
+.landing > *,
+.center-page > * {
+  min-width: 0;
 }
 
 .row {
@@ -289,9 +304,10 @@ code,
 
 .section-head {
   display: flex;
-  align-items: baseline;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.75rem 1rem;
 }
 
 /* --- Panels & lists ------------------------------------------------------- */
@@ -301,6 +317,7 @@ code,
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 1.25rem;
+  min-width: 0;
 }
 
 .panel-quiet {
@@ -327,9 +344,10 @@ code,
 
 .list-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.65rem 1rem;
   padding: 0.95rem 1.1rem;
   text-decoration: none;
   color: var(--ink);
@@ -1888,6 +1906,31 @@ code,
   display: none;
 }
 
+.saas-brand-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.saas-sidebar-close {
+  display: none;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffffff;
+  font-size: 0.9rem;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+}
+
+.saas-mobile-bottomnav {
+  display: none;
+}
+
 @media (max-width: 900px) {
   .saas-layout {
     grid-template-columns: 1fr;
@@ -1898,33 +1941,349 @@ code,
     left: 0;
     top: 0;
     bottom: 0;
-    width: 270px;
+    width: min(285px, 86vw);
     transform: translateX(-100%);
-    transition: transform 180ms ease;
+    transition: transform 200ms ease;
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
   }
 
   .saas-sidebar.is-open {
     transform: translateX(0);
   }
 
+  .saas-sidebar-close {
+    display: inline-flex;
+  }
+
   .saas-backdrop {
     display: block;
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.45);
+    background: rgba(0, 0, 0, 0.48);
     z-index: 35;
   }
 
   .saas-menu-btn {
     display: inline-flex;
     align-items: center;
+    flex-shrink: 0;
+  }
+
+  .saas-main {
+    padding: 1.15rem 0 5.5rem;
+  }
+
+  .saas-main > .container {
+    width: min(1160px, 100% - 1.5rem);
   }
 
   .vtabs-layout {
     grid-template-columns: 1fr;
+    gap: 1rem;
   }
 
   .vtabs-rail {
     position: static;
+    min-width: 0;
+  }
+
+  /* Convert in-page vertical tab cards into a sleek horizontal scrollable strip on mobile */
+  .vtabs {
+    display: flex;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 0.4rem;
+    padding: 0.35rem;
+    scrollbar-width: none;
+  }
+
+  .vtabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .vtab-item {
+    width: auto;
+    flex: 0 0 auto;
+    padding: 0.5rem 0.8rem;
+    align-items: center;
+    gap: 0.45rem;
+  }
+
+  .vtab-item.is-active {
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
+
+  .vtab-desc {
+    display: none;
+  }
+
+  .vtab-label {
+    white-space: nowrap;
+    font-size: 0.85rem;
+  }
+
+  /* Fixed bottom mobile navigation bar */
+  .saas-mobile-bottomnav {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    background: var(--surface);
+    border-top: 1px solid var(--border-strong);
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(56px, 1fr));
+    padding: 0.25rem 0.35rem calc(0.25rem + env(safe-area-inset-bottom, 0px));
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.06);
+  }
+
+  .saas-mobile-tab {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--ink-muted);
+    text-decoration: none;
+    font: inherit;
+    padding: 0.38rem 0.25rem;
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.2rem;
+    cursor: pointer;
+    min-width: 0;
+  }
+
+  .saas-mobile-tab.is-active {
+    color: var(--accent);
+    background: var(--accent-soft);
+    font-weight: 700;
+  }
+
+  .saas-mobile-tab-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0.55;
+  }
+
+  .saas-mobile-tab.is-active .saas-mobile-tab-dot {
+    opacity: 1;
+  }
+
+  .saas-mobile-tab-label {
+    font-size: 0.69rem;
+    line-height: 1.1;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .toasts {
+    bottom: 4.5rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .container,
+  .saas-main > .container {
+    width: calc(100% - 1.25rem);
+  }
+
+  .main {
+    padding: 1rem 0 2.5rem;
+  }
+
+  .topbar-inner {
+    height: auto;
+    min-height: 3.1rem;
+    padding: 0.4rem 0;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .topbar-user {
+    gap: 0.45rem;
+  }
+
+  .saas-topbar {
+    padding: 0 0.65rem;
+    height: 3.1rem;
+    gap: 0.4rem;
+  }
+
+  .saas-topbar-left {
+    min-width: 0;
+    flex: 1;
+    gap: 0.45rem;
+  }
+
+  .saas-breadcrumbs {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .saas-breadcrumb-root {
+    display: none;
+  }
+
+  .saas-breadcrumb-current {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .saas-status-text {
+    display: none;
+  }
+
+  .saas-status-pill {
+    padding: 0.25rem;
+  }
+
+  .panel {
+    padding: 0.95rem;
+  }
+
+  .landing {
+    gap: 1.5rem;
+  }
+
+  .landing-hero {
+    padding: 1.15rem;
+  }
+
+  .hero-actions {
+    width: 100%;
+  }
+
+  .hero-actions > .btn {
+    flex: 1 1 auto;
+  }
+
+  .kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.6rem;
+  }
+
+  .kpi-card {
+    padding: 0.75rem 0.85rem;
+  }
+
+  .kpi-value {
+    font-size: 1.25rem;
+  }
+
+  .kpi-label {
+    font-size: 0.7rem;
+  }
+
+  .kpi-sub {
+    font-size: 0.73rem;
+  }
+
+  .class-cards-grid,
+  .landing-grid,
+  .landing-grid-3,
+  .steps-grid,
+  .grid-2,
+  .filter-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .password-row,
+  .dept-form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .password-row > .btn,
+  .dept-form-row > .btn {
+    margin-top: 0;
+    width: 100%;
+  }
+
+  .page-header-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .page-header-row > .row {
+    width: 100%;
+  }
+
+  .section-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .section-head > .row {
+    width: 100%;
+  }
+
+  .section-head > .row > .btn {
+    flex: 1 1 auto;
+  }
+
+  .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .segmented {
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  .segmented button {
+    flex: 1 1 auto;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .search {
+    max-width: 100%;
+    width: 100%;
+  }
+
+  .export-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .export-bar .field {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .share {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 0.75rem;
+  }
+
+  .share > .row {
+    width: 100%;
+  }
+
+  .share > .row > .btn {
+    flex: 1 1 auto;
+  }
+
+  .checkin-head {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .table th,
+  .table td {
+    padding: 0.5rem 0.6rem;
+    font-size: 0.84rem;
+  }
+
+  .cmd-backdrop {
+    padding: 4vh 0.6rem 0.6rem;
   }
 }
