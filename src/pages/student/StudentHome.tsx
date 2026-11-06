@@ -1,11 +1,21 @@
 import { useCallback } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
-import { useAsync, useNow, usePolling } from '@/hooks/useAsync';
-import { getMyEnrollment, listMyCheckIns, listOpenSessions } from '@/services/student';
-import { isPasskeySupported } from '@/lib/webauthn';
+import { useAction, useAsync, useNow, usePolling } from '@/hooks/useAsync';
+import { useToast } from '@/hooks/useToast';
+import {
+  bindStudentPasskey,
+  getMyEnrollment,
+  listMyCheckIns,
+  listOpenSessions,
+} from '@/services/student';
+import {
+  detectIncognitoMode,
+  getExistingDeviceToken,
+  registerDevicePasskey,
+} from '@/lib/webauthn';
 import { CheckInCard } from '@/features/checkin/CheckInCard';
-import { Badge, Button, EmptyState, ErrorAlert, PageHeader, PageLoader } from '@/components/ui';
+import { Alert, Badge, Button, EmptyState, ErrorAlert, PageHeader, PageLoader } from '@/components/ui';
 import { KpiStatGrid, VerticalTabs, type VerticalTabItem } from '@/components/saas';
 import { formatDate, formatTime, isOpen } from '@/lib/format';
 import type { Attendance } from '@/types';
@@ -24,6 +34,9 @@ export function StudentHome() {
 
 function StudentDashboard() {
   const me = useAsync(getMyEnrollment, []);
+  const incognito = useAsync(detectIncognitoMode, []);
+  const localToken = useAsync(getExistingDeviceToken, []);
+  const toast = useToast();
   const classId = me.data?.student.class_id;
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -47,7 +60,33 @@ function StudentDashboard() {
   }, [sessions]);
   usePolling(refresh, 15_000, Boolean(classId));
 
-  if (me.loading) return <PageLoader />;
+  // For students who claimed before the mandatory passkey-on-claim upgrade:
+  const bindPasskeyAction = useAction(async () => {
+    if (!me.data) return null;
+    const { student } = me.data;
+    const { passkeyId, deviceToken } = await registerDevicePasskey(
+      student.full_name,
+      student.matric_no,
+    );
+    const updated = await bindStudentPasskey(passkeyId, deviceToken);
+    me.setData({ student: updated, className: me.data.className });
+    void localToken.reload({ silent: true });
+    toast('Hardware passkey bound to this phone!');
+    return updated;
+  });
+
+  if (me.loading || incognito.loading || localToken.loading) return <PageLoader />;
+
+  if (incognito.data) {
+    return (
+      <div className="container narrow stack">
+        <Alert tone="error" title="Incognito / Private Mode is Blocked">
+          CampusPulse requires your normal browser window so your phone’s hardware passkey and device token stay strictly linked. Please close Incognito and open this page in normal browsing mode.
+        </Alert>
+      </div>
+    );
+  }
+
   if (me.error) {
     return (
       <div className="container narrow">
@@ -67,7 +106,7 @@ function StudentDashboard() {
             </Link>
           }
         >
-          Open the link your class rep shared, or enter the class code.
+          Open the link your class rep shared, or enter the class code to set up your passkey and claim your account.
         </EmptyState>
       </div>
     );
@@ -77,7 +116,11 @@ function StudentDashboard() {
   const open = (sessions.data ?? []).filter((s) => isOpen(s, now));
   const checkIns = (history.data ?? []).filter((c) => c.session);
   const bySession = new Map<string, Attendance>((history.data ?? []).map((a) => [a.session_id, a]));
-  const passkeyRegistered = isPasskeySupported();
+
+  const needsInitialPasskeyBind = !student.passkey_id || !student.device_token;
+  const deviceMismatch =
+    !needsInitialPasskeyBind &&
+    (!localToken.data || localToken.data !== student.device_token);
 
   const addCheckIn = (row: Attendance) => {
     history.setData((prev) => [{ ...row, session: null }, ...(prev ?? [])]);
@@ -114,8 +157,12 @@ function StudentDashboard() {
             <span className="mono muted small">{student.matric_no}</span>
             {student.suspended ? (
               <Badge tone="muted">Suspended</Badge>
+            ) : needsInitialPasskeyBind ? (
+              <Badge tone="muted">Passkey Pending</Badge>
+            ) : deviceMismatch ? (
+              <Badge tone="muted">Device Mismatch</Badge>
             ) : (
-              <Badge tone="ok">Verified Device</Badge>
+              <Badge tone="ok">Passkey & Phone Locked</Badge>
             )}
           </span>
         }
@@ -125,6 +172,33 @@ function StudentDashboard() {
           </Button>
         }
       />
+
+      {needsInitialPasskeyBind && (
+        <div className="panel stack">
+          <Alert
+            tone="warning"
+            title="Action Required: Complete Your Passkey Setup"
+            action={
+              <Button
+                size="sm"
+                onClick={() => void bindPasskeyAction.run()}
+                loading={bindPasskeyAction.pending}
+              >
+                Set Up Passkey Now
+              </Button>
+            }
+          >
+            To check in to lectures, you must bind your phone’s Fingerprint, Face ID, or screen lock Passkey to your matric number (<strong className="mono">{student.matric_no}</strong>).
+          </Alert>
+          <ErrorAlert error={bindPasskeyAction.error} />
+        </div>
+      )}
+
+      {deviceMismatch && (
+        <Alert tone="error" title="Unrecognized Browser or Device">
+          This browser does not match the phone and browser where <strong className="mono">{student.matric_no}</strong> was claimed. Open this page in your normal browser on your registered phone, or ask your Class Rep to click <strong>Reset phone</strong> on the roster.
+        </Alert>
+      )}
 
       <KpiStatGrid
         items={[
@@ -141,10 +215,14 @@ function StudentDashboard() {
             tone: 'accent',
           },
           {
-            label: 'Biometric Passkey',
-            value: passkeyRegistered ? 'Active' : 'Setup on 1st Check-in',
-            sublabel: 'Fingerprint / Face ID / PIN',
-            tone: passkeyRegistered ? 'ok' : 'default',
+            label: 'Hardware Passkey',
+            value: needsInitialPasskeyBind
+              ? 'Setup Required'
+              : deviceMismatch
+                ? 'Device Mismatch'
+                : 'Strictly Bound',
+            sublabel: '1 Phone = 1 Student (No Incognito)',
+            tone: !needsInitialPasskeyBind && !deviceMismatch ? 'ok' : 'warn',
           },
         ]}
       />
@@ -166,7 +244,7 @@ function StudentDashboard() {
                 <div>
                   <h2>Open Lecture Sessions</h2>
                   <p className="muted small">
-                    Be inside the lecture venue and verify with your device passkey before the timer closes.
+                    Be inside the lecture venue and verify with your bound phone Passkey before the timer closes.
                   </p>
                 </div>
                 <button className="link-button" onClick={refresh} disabled={sessions.loading}>
@@ -176,7 +254,21 @@ function StudentDashboard() {
 
               <ErrorAlert error={sessions.error} onRetry={() => sessions.reload()} />
 
-              {sessions.loading && !sessions.data ? (
+              {needsInitialPasskeyBind ? (
+                <EmptyState
+                  title="Set up your Passkey first"
+                  action={
+                    <Button
+                      onClick={() => void bindPasskeyAction.run()}
+                      loading={bindPasskeyAction.pending}
+                    >
+                      Set Up Passkey & Lock Phone
+                    </Button>
+                  }
+                >
+                  Tap above to register your Fingerprint, Face ID, or screen lock before checking in to live sessions.
+                </EmptyState>
+              ) : sessions.loading && !sessions.data ? (
                 <PageLoader label="Checking for sessions" />
               ) : open.length === 0 ? (
                 <EmptyState title="No session is open right now">
@@ -242,14 +334,18 @@ function StudentDashboard() {
                   <strong>Enrolled Cohort:</strong> {className}
                 </p>
                 <p>
-                  <strong>Passkey Status:</strong>{' '}
-                  {passkeyRegistered
-                    ? 'Registered on this device (Fingerprint / Face ID / PIN)'
-                    : 'Will be registered automatically on your next check-in'}
+                  <strong>Hardware Passkey ID:</strong>{' '}
+                  <span className="mono">
+                    {student.passkey_id ? `${student.passkey_id.slice(0, 16)}…` : 'Not bound yet'}
+                  </span>
+                </p>
+                <p>
+                  <strong>Incognito Protection:</strong>{' '}
+                  <Badge tone="ok">Enforced (Normal Mode Only)</Badge>
                 </p>
               </div>
               <p className="muted small">
-                Your matric number is cryptographically locked to this phone’s browser so no one else can claim your attendance. If you change or lose your phone, ask your Class Rep to click <strong>Reset phone</strong> next to your name on the class roster.
+                Your matric number is cryptographically locked to this phone’s hardware Passkey and persistent device vault. It will not work on another student’s phone or in Incognito mode. If you change or lose your phone, ask your Class Rep to click <strong>Reset phone</strong> next to your name on the class roster.
               </p>
             </section>
           )}

@@ -32,11 +32,28 @@ export async function getMyEnrollment(): Promise<MyEnrollment | null> {
   return { student, className: classes?.name ?? '' };
 }
 
-export async function claimStudent(code: string, matric: string, name: string): Promise<Student> {
+export async function claimStudent(
+  code: string,
+  matric: string,
+  name: string,
+  passkeyId: string,
+  deviceToken: string,
+): Promise<Student> {
   const { data, error } = await supabase.rpc('claim_student', {
     p_code: code,
     p_matric: matric,
     p_name: name,
+    p_passkey_id: passkeyId,
+    p_device_token: deviceToken,
+  });
+  if (error) throw toAppError(error);
+  return data as Student;
+}
+
+export async function bindStudentPasskey(passkeyId: string, deviceToken: string): Promise<Student> {
+  const { data, error } = await supabase.rpc('bind_student_passkey', {
+    p_passkey_id: passkeyId,
+    p_device_token: deviceToken,
   });
   if (error) throw toAppError(error);
   return data as Student;
@@ -66,12 +83,19 @@ export async function listMyCheckIns(limit = 30): Promise<MyCheckIn[]> {
   return rows as MyCheckIn[];
 }
 
-export async function checkIn(sessionId: string, fix: GeoFix): Promise<Attendance> {
+export async function checkIn(
+  sessionId: string,
+  fix: GeoFix,
+  passkeyId: string,
+  deviceToken: string,
+): Promise<Attendance> {
   const { data, error } = await supabase.rpc('check_in', {
     p_session_id: sessionId,
     p_lat: fix.lat,
     p_lng: fix.lng,
     p_accuracy: fix.accuracy,
+    p_passkey_id: passkeyId,
+    p_device_token: deviceToken,
   });
   if (error) throw toAppError(error);
   return data as Attendance;

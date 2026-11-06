@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { checkIn } from '@/services/student';
 import { locate } from '@/lib/geo';
-import { authenticateWithPasskey } from '@/lib/webauthn';
+import { verifyDevicePasskey } from '@/lib/webauthn';
 import { toAppError, type AppError } from '@/lib/errors';
 import { formatTime, timeLeft } from '@/lib/format';
 import { Alert, Button } from '@/components/ui';
@@ -25,15 +25,17 @@ export function CheckInCard({ session, student, checkedIn, now, onCheckedIn }: P
     setError(null);
     try {
       setPhase('auth');
-      const authResult = await authenticateWithPasskey(student.full_name, student.matric_no);
-      if (!authResult.success) {
-        throw new Error(authResult.error || 'Biometric authentication required to check in.');
-      }
+      // 1. Verify the exact hardware passkey & persistent device token bound during claim
+      const { passkeyId, deviceToken } = await verifyDevicePasskey(
+        student.passkey_id,
+        student.device_token,
+      );
 
       setPhase('locating');
       const fix = await locate();
+
       setPhase('sending');
-      const row = await checkIn(session.id, fix);
+      const row = await checkIn(session.id, fix, passkeyId, deviceToken);
       onCheckedIn(row);
     } catch (e) {
       const err = toAppError(e);
@@ -78,24 +80,22 @@ export function CheckInCard({ session, student, checkedIn, now, onCheckedIn }: P
         <>
           <Button size="lg" block onClick={run} loading={busy}>
             {phase === 'auth'
-              ? 'Verifying Biometrics / Passkey…'
+              ? 'Verifying Bound Passkey…'
               : phase === 'locating'
-              ? 'Getting your location…'
-              : phase === 'sending'
-              ? 'Checking in…'
-              : 'Check in with Biometrics'}
+                ? 'Getting your GPS location…'
+                : phase === 'sending'
+                  ? 'Recording attendance…'
+                  : 'Verify Passkey & Check In'}
           </Button>
           {phase === 'auth' && (
-            <p className="fine-print center">Confirm your Face ID, Fingerprint, or screen lock to verify your presence.</p>
+            <p className="fine-print center">
+              Confirm your registered Fingerprint, Face ID, or screen lock for this phone.
+            </p>
           )}
           {phase === 'locating' && (
             <p className="fine-print center">Allow location if your phone asks. This takes a few seconds.</p>
           )}
-          {error && (
-            <Alert tone="error">
-              {error.message}
-            </Alert>
-          )}
+          {error && <Alert tone="error">{error.message}</Alert>}
         </>
       )}
     </article>

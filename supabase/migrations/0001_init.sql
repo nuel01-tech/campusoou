@@ -138,17 +138,23 @@ create index if not exists classes_owner_idx on public.classes (owner_id);
 create index if not exists classes_department_idx on public.classes (department_id);
 
 create table if not exists public.students (
-  id          uuid primary key default gen_random_uuid(),
-  class_id    uuid not null references public.classes (id) on delete cascade,
-  full_name   text not null check (char_length(trim(full_name)) between 2 and 160),
-  matric_no   text not null check (char_length(matric_no) between 2 and 40),
-  user_id     uuid unique references auth.users (id) on delete set null,
-  claimed_at  timestamptz,
-  suspended   boolean not null default false,
-  created_at  timestamptz not null default now(),
+  id            uuid primary key default gen_random_uuid(),
+  class_id      uuid not null references public.classes (id) on delete cascade,
+  full_name     text not null check (char_length(trim(full_name)) between 2 and 160),
+  matric_no     text not null check (char_length(matric_no) between 2 and 40),
+  user_id       uuid unique references auth.users (id) on delete set null,
+  passkey_id    text,
+  device_token  text,
+  claimed_at    timestamptz,
+  suspended     boolean not null default false,
+  created_at    timestamptz not null default now(),
   unique (class_id, matric_no)
 );
 alter table public.students add column if not exists suspended boolean not null default false;
+alter table public.students add column if not exists passkey_id text;
+alter table public.students add column if not exists device_token text;
+create unique index if not exists students_passkey_id_idx on public.students (passkey_id) where passkey_id is not null;
+create unique index if not exists students_device_token_idx on public.students (device_token) where device_token is not null;
 create index if not exists students_class_idx on public.students (class_id);
 
 create table if not exists public.sessions (
@@ -1015,10 +1021,18 @@ as $$
 $$;
 
 -- -----------------------------------------------------------------------------
--- RPC: student claims their roster entry
+-- RPC: student claims their roster entry (strictly bound to Passkey + Device)
 -- -----------------------------------------------------------------------------
 
-create or replace function public.claim_student(p_code text, p_matric text, p_name text)
+drop function if exists public.claim_student(text, text, text);
+drop function if exists public.claim_student(text, text, text, text, text);
+create or replace function public.claim_student(
+  p_code         text,
+  p_matric       text,
+  p_name         text,
+  p_passkey_id   text default null,
+  p_device_token text default null
+)
 returns public.students
 language plpgsql
 security definer
@@ -1026,11 +1040,17 @@ set search_path = public
 as $$
 declare
   v_uid     uuid := auth.uid();
+  v_passkey text := trim(coalesce(p_passkey_id, ''));
+  v_device  text := trim(coalesce(p_device_token, ''));
   v_class   classes;
   v_student students;
 begin
   if v_uid is null then
     raise exception 'NOT_AUTHENTICATED';
+  end if;
+
+  if v_passkey = '' or v_device = '' then
+    raise exception 'PASSKEY_REQUIRED';
   end if;
 
   select * into v_class from classes where join_code = upper(trim(p_code));
@@ -1042,10 +1062,24 @@ begin
     raise exception 'REP_CANNOT_CLAIM';
   end if;
 
-  -- This device already holds a claim.
-  select * into v_student from students where user_id = v_uid;
+  -- Check if this auth session, hardware passkey, or physical device token already holds a claim.
+  select * into v_student
+    from students
+   where user_id = v_uid
+      or passkey_id = v_passkey
+      or device_token = v_device
+   limit 1;
+
   if found then
-    if v_student.class_id = v_class.id and v_student.matric_no = normalize_matric(p_matric) then
+    if v_student.class_id = v_class.id
+       and v_student.matric_no = normalize_matric(p_matric)
+       and v_student.user_id = v_uid
+    then
+      update students
+         set passkey_id   = coalesce(passkey_id, v_passkey),
+             device_token = coalesce(device_token, v_device)
+       where id = v_student.id
+      returning * into v_student;
       return v_student;
     end if;
     raise exception 'DEVICE_ALREADY_CLAIMED';
@@ -1060,7 +1094,7 @@ begin
     raise exception 'MATRIC_NOT_FOUND';
   end if;
 
-  if v_student.user_id is not null then
+  if v_student.user_id is not null or v_student.passkey_id is not null or v_student.device_token is not null then
     raise exception 'ALREADY_CLAIMED';
   end if;
 
@@ -1069,7 +1103,61 @@ begin
   end if;
 
   update students
-     set user_id = v_uid, claimed_at = now()
+     set user_id      = v_uid,
+         passkey_id   = v_passkey,
+         device_token = v_device,
+         claimed_at   = now()
+   where id = v_student.id
+  returning * into v_student;
+
+  return v_student;
+end;
+$$;
+
+-- Allows a student who claimed prior to the passkey-on-claim upgrade to bind their passkey once.
+create or replace function public.bind_student_passkey(
+  p_passkey_id   text,
+  p_device_token text
+)
+returns public.students
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid     uuid := auth.uid();
+  v_passkey text := trim(coalesce(p_passkey_id, ''));
+  v_device  text := trim(coalesce(p_device_token, ''));
+  v_student students;
+begin
+  if v_uid is null then
+    raise exception 'NOT_AUTHENTICATED';
+  end if;
+
+  if v_passkey = '' or v_device = '' then
+    raise exception 'PASSKEY_REQUIRED';
+  end if;
+
+  select * into v_student from students where user_id = v_uid for update;
+  if not found then
+    raise exception 'NOT_IN_CLASS';
+  end if;
+
+  if exists (
+    select 1 from students
+     where (passkey_id = v_passkey or device_token = v_device)
+       and id <> v_student.id
+  ) then
+    raise exception 'DEVICE_ALREADY_CLAIMED';
+  end if;
+
+  if v_student.passkey_id is not null and v_student.passkey_id <> v_passkey then
+    raise exception 'DEVICE_MISMATCH';
+  end if;
+
+  update students
+     set passkey_id   = v_passkey,
+         device_token = v_device
    where id = v_student.id
   returning * into v_student;
 
@@ -1078,14 +1166,18 @@ end;
 $$;
 
 -- -----------------------------------------------------------------------------
--- RPC: student checks in to an open session
+-- RPC: student checks in to an open session (verifies Passkey + Device + GPS)
 -- -----------------------------------------------------------------------------
 
+drop function if exists public.check_in(uuid, float8, float8, float8);
+drop function if exists public.check_in(uuid, float8, float8, float8, text, text);
 create or replace function public.check_in(
-  p_session_id uuid,
-  p_lat        float8,
-  p_lng        float8,
-  p_accuracy   float8
+  p_session_id   uuid,
+  p_lat          float8,
+  p_lng          float8,
+  p_accuracy     float8,
+  p_passkey_id   text default null,
+  p_device_token text default null
 )
 returns public.attendance
 language plpgsql
@@ -1094,6 +1186,8 @@ set search_path = public
 as $$
 declare
   v_uid      uuid := auth.uid();
+  v_passkey  text := trim(coalesce(p_passkey_id, ''));
+  v_device   text := trim(coalesce(p_device_token, ''));
   v_session  sessions;
   v_student  students;
   v_distance float8;
@@ -1119,6 +1213,14 @@ begin
 
   if v_student.suspended = true then
     raise exception 'STUDENT_SUSPENDED';
+  end if;
+
+  if v_passkey = '' or v_device = '' or v_student.passkey_id is null or v_student.device_token is null then
+    raise exception 'PASSKEY_REQUIRED';
+  end if;
+
+  if v_student.passkey_id <> v_passkey or v_student.device_token <> v_device then
+    raise exception 'DEVICE_MISMATCH';
   end if;
 
   if now() < v_session.starts_at then
@@ -1164,8 +1266,9 @@ grant select, insert, update, delete on table public.students to authenticated;
 grant select, insert, update, delete on table public.sessions to authenticated;
 grant select, insert, update, delete on table public.attendance to authenticated;
 
-revoke all on function public.claim_student(text, text, text) from public, anon;
-revoke all on function public.check_in(uuid, float8, float8, float8) from public, anon;
+revoke all on function public.claim_student(text, text, text, text, text) from public, anon;
+revoke all on function public.bind_student_passkey(text, text) from public, anon;
+revoke all on function public.check_in(uuid, float8, float8, float8, text, text) from public, anon;
 revoke all on function public.list_departments() from public, anon;
 revoke all on function public.create_department(text) from public, anon;
 revoke all on function public.delete_department(uuid) from public, anon;
@@ -1180,8 +1283,9 @@ grant execute on function public.has_super_admin() to anon, authenticated;
 grant execute on function public.bootstrap_super_admin(text, text, text) to anon, authenticated;
 grant execute on function public.ensure_first_super_admin(text) to authenticated;
 grant execute on function public.get_class_by_code(text) to anon, authenticated;
-grant execute on function public.claim_student(text, text, text) to authenticated;
-grant execute on function public.check_in(uuid, float8, float8, float8) to authenticated;
+grant execute on function public.claim_student(text, text, text, text, text) to authenticated;
+grant execute on function public.bind_student_passkey(text, text) to authenticated;
+grant execute on function public.check_in(uuid, float8, float8, float8, text, text) to authenticated;
 grant execute on function public.list_departments() to authenticated;
 grant execute on function public.create_department(text) to authenticated;
 grant execute on function public.delete_department(uuid) to authenticated;

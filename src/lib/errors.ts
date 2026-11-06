@@ -51,7 +51,18 @@ const MESSAGES: Record<string, string | MessageFor> = {
     'This matric number has already been claimed on another phone. If that was not you, tell your class rep to reset it.',
   NAME_MISMATCH:
     'The name does not match the class list for this matric number. Type at least your surname and first name.',
-  DEVICE_ALREADY_CLAIMED: 'This phone is already linked to another student.',
+  DEVICE_ALREADY_CLAIMED:
+    'This phone is already linked to another student. One phone can only be used for one student account.',
+  PASSKEY_REQUIRED:
+    'You must set up and verify your device Passkey (Fingerprint, Face ID, or screen lock PIN) on this phone.',
+  PASSKEY_CANCELLED:
+    'Passkey setup or verification was cancelled. You must confirm with your Fingerprint, Face ID, or screen lock to continue.',
+  PASSKEY_UNSUPPORTED:
+    'This browser does not support device Passkeys (WebAuthn). Open this link in Chrome (Android) or Safari (iPhone) in normal browsing mode.',
+  DEVICE_MISMATCH:
+    'This browser or phone does not match the device linked to your matric number. Open this page in your normal browser (not Incognito) on your registered phone, or ask your Class Rep to reset your phone.',
+  INCOGNITO_BLOCKED:
+    'Incognito / Private browsing mode is strictly disabled. Please close Incognito and open this link in your normal browser window so your phone stays permanently linked.',
   REP_CANNOT_CLAIM: 'You are signed in as staff. Sign out first to claim a student account.',
 
   // Check-in

@@ -48,9 +48,19 @@ export async function setStudentSuspended(id: string, suspended: boolean): Promi
   );
 }
 
-/** Unlinks the student's phone so they can claim again on a new device. */
+/** Unlinks the student's phone and passkey so they can claim again on a new device. */
 export async function resetClaim(id: string): Promise<Student> {
   return unwrap(
-    await supabase.from('students').update({ user_id: null, claimed_at: null }).eq('id', id).select().single(),
+    await supabase
+      .from('students')
+      .update({
+        user_id: null,
+        claimed_at: null,
+        passkey_id: null,
+        device_token: null,
+      } as any)
+      .eq('id', id)
+      .select()
+      .single(),
   );
 }

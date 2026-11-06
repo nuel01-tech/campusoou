@@ -5,7 +5,8 @@ import { useAction, useAsync } from '@/hooks/useAsync';
 import { useToast } from '@/hooks/useToast';
 import { ensureStudentSession } from '@/services/auth';
 import { claimStudent, findClassByCode, getMyEnrollment } from '@/services/student';
-import { Alert, Button, ErrorAlert, PageLoader, TextField } from '@/components/ui';
+import { detectIncognitoMode, isPasskeySupported, registerDevicePasskey } from '@/lib/webauthn';
+import { Alert, Badge, Button, ErrorAlert, PageLoader, TextField } from '@/components/ui';
 import { titleCase } from '@/lib/names';
 
 export function JoinPage() {
@@ -24,9 +25,9 @@ function ClaimForm({ code }: { code: string }) {
   const [name, setName] = useState('');
   const [touched, setTouched] = useState(false);
 
+  const incognito = useAsync(detectIncognitoMode, []);
   const klass = useAsync(() => findClassByCode(code), [code]);
-  // If this phone has already claimed, skip the form. Evaluated once auth is
-  // ready (not on every role change, so claiming doesn't flash a loader).
+  // If this phone has already claimed, skip the form.
   const existing = useAsync(
     () => (ready && role === 'student' ? getMyEnrollment() : Promise.resolve(null)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -34,17 +35,53 @@ function ClaimForm({ code }: { code: string }) {
   );
 
   const claim = useAction(async () => {
+    // 1. Prompt hardware Passkey creation (Fingerprint / Face ID / PIN) FIRST!
+    //    This ensures the student sets up their passkey right as they claim,
+    //    and blocks Incognito mode or unsupported browsers before touching the DB.
+    const { passkeyId, deviceToken } = await registerDevicePasskey(name, matric);
+
+    // 2. Create/reuse anonymous auth session and strictly bind the passkey + device token in Postgres.
     await ensureStudentSession();
-    return claimStudent(code, matric, name);
+    return claimStudent(code, matric, name, passkeyId, deviceToken);
   });
 
-  if (!ready || klass.loading || existing.loading) return <PageLoader />;
+  if (!ready || klass.loading || existing.loading || incognito.loading) return <PageLoader />;
   if (existing.data) return <Navigate to="/me" replace />;
+
+  if (incognito.data) {
+    return (
+      <div className="container narrow stack">
+        <Alert tone="error" title="Incognito / Private Browsing is Blocked">
+          Student accounts are permanently bound to your phone and cannot be claimed or used in Incognito / Private mode.
+          Please copy this link, close Incognito, and open it in your normal Chrome or Safari browser window.
+        </Alert>
+        <Link to="/" className="link-quiet">
+          ← Back to home
+        </Link>
+      </div>
+    );
+  }
+
+  if (!isPasskeySupported()) {
+    return (
+      <div className="container narrow stack">
+        <Alert tone="error" title="Device Passkey Required">
+          This browser does not support biometric/device Passkeys (WebAuthn). Please open this link directly in Chrome (on Android) or Safari (on iPhone) to bind your phone.
+        </Alert>
+        <Link to="/" className="link-quiet">
+          ← Back to home
+        </Link>
+      </div>
+    );
+  }
 
   if (klass.error) {
     return (
-      <div className="container narrow">
-        <ErrorAlert error={klass.error} onRetry={klass.error.code === 'NETWORK' ? () => klass.reload() : undefined} />
+      <div className="container narrow stack">
+        <ErrorAlert
+          error={klass.error}
+          onRetry={klass.error.code === 'NETWORK' ? () => klass.reload() : undefined}
+        />
         <Link to="/" className="link-quiet">
           ← Enter a different code
         </Link>
@@ -54,15 +91,17 @@ function ClaimForm({ code }: { code: string }) {
 
   const matricError = touched && matric.trim().length < 2 ? 'Enter your matric number.' : null;
   const nameError =
-    touched && name.trim().split(/\s+/).filter(Boolean).length < 2 ? 'Enter at least your surname and first name.' : null;
+    touched && name.trim().split(/\s+/).filter(Boolean).length < 2
+      ? 'Enter at least your surname and first name.'
+      : null;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setTouched(true);
-    if (matric.trim().length < 2 || name.trim().split(/\s+/).length < 2) return;
+    if (matric.trim().length < 2 || name.trim().split(/\s+/).filter(Boolean).length < 2) return;
     const student = await claim.run();
     if (student) {
-      toast(`Welcome, ${titleCase(student.full_name)}`);
+      toast(`Passkey bound! Welcome, ${titleCase(student.full_name)}`);
       navigate('/me', { replace: true });
     }
   };
@@ -70,10 +109,14 @@ function ClaimForm({ code }: { code: string }) {
   return (
     <div className="container narrow">
       <header className="page-header">
-        <p className="eyebrow">Join class</p>
+        <div className="row" style={{ gap: '0.45rem' }}>
+          <Badge tone="ok">1 Phone = 1 Student</Badge>
+          <Badge tone="neutral">Passkey Required</Badge>
+        </div>
         <h1>{klass.data?.name}</h1>
         <p className="page-subtitle">
-          Enter your details exactly as your class rep has them. You only do this once on this phone.
+          Enter your details exactly as your class rep uploaded them. When you tap below, your phone will prompt for your{' '}
+          <strong>Fingerprint, Face ID, or Screen Lock</strong> to permanently bind this device to your matric number.
         </p>
       </header>
 
@@ -82,7 +125,7 @@ function ClaimForm({ code }: { code: string }) {
           Sign out first, or open this link on the student's own phone.
         </Alert>
       ) : (
-        <form onSubmit={submit} noValidate className="stack">
+        <form onSubmit={submit} noValidate className="panel stack">
           <TextField
             label="Matric number"
             value={matric}
@@ -100,17 +143,19 @@ function ClaimForm({ code }: { code: string }) {
             onChange={(e) => setName(e.target.value)}
             placeholder="Surname and first name"
             autoComplete="name"
-            hint="Order doesn't matter."
+            hint="Order doesn't matter, as long as it matches the class list."
             error={nameError}
           />
 
           <ErrorAlert error={claim.error} />
 
           <Button type="submit" size="lg" block loading={claim.pending}>
-            Claim my account
+            {claim.pending
+              ? 'Verifying Passkey & Binding Phone…'
+              : 'Set Up Passkey & Claim My Account'}
           </Button>
           <p className="fine-print">
-            This phone will be linked to your matric number. If you change phones, ask your class rep to reset it.
+            Strict Security: Once claimed, your matric number is locked to this phone’s hardware passkey and cannot be used on any other phone or in Incognito mode.
           </p>
         </form>
       )}
