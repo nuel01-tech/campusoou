@@ -626,7 +626,8 @@ code,
   border-color: var(--accent);
 }
 
-.field-invalid input {
+.field-invalid input,
+.field-invalid select {
   border-color: var(--danger);
 }
 
@@ -1150,4 +1151,51 @@ code,
   grid-column: 1 / -1;
   font-size: 0.82rem;
   color: var(--ink-muted);
+}
+
+/* --- Super Admin departments --------------------------------------------- */
+
+.dept-form-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
+  gap: 0.6rem;
+}
+
+.dept-form-row > .btn {
+  margin-top: 1.62rem;
+}
+
+.dept-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.dept-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.45rem 0.35rem 0.75rem;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+}
+
+.dept-chip-name {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.dept-chip-count {
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
 }

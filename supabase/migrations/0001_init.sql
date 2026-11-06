@@ -84,24 +84,35 @@ as $$
 $$;
 
 -- -----------------------------------------------------------------------------
--- Profiles (Super Admin & Class Reps) + Pre-authorized Rep Signups
+-- Departments, Profiles (Super Admin & Class Reps) + Pre-authorized Rep Signups
 -- -----------------------------------------------------------------------------
 
-create table if not exists public.profiles (
-  id          uuid primary key references auth.users (id) on delete cascade,
-  email       text not null unique,
-  full_name   text not null check (char_length(trim(full_name)) between 2 and 120),
-  role        text not null check (role in ('super_admin', 'rep')),
-  active      boolean not null default true,
+create table if not exists public.departments (
+  id          uuid primary key default gen_random_uuid(),
+  name        text not null check (char_length(trim(name)) between 2 and 120),
   created_at  timestamptz not null default now()
 );
+create unique index if not exists departments_name_lower_idx on public.departments (lower(trim(name)));
+
+create table if not exists public.profiles (
+  id             uuid primary key references auth.users (id) on delete cascade,
+  email          text not null unique,
+  full_name      text not null check (char_length(trim(full_name)) between 2 and 120),
+  role           text not null check (role in ('super_admin', 'rep')),
+  department_id  uuid references public.departments (id) on delete set null,
+  active         boolean not null default true,
+  created_at     timestamptz not null default now()
+);
+alter table public.profiles add column if not exists department_id uuid references public.departments (id) on delete set null;
 
 create table if not exists public.authorized_reps (
-  email       text primary key,
-  full_name   text not null,
-  created_by  uuid references auth.users (id) on delete set null,
-  created_at  timestamptz not null default now()
+  email          text primary key,
+  full_name      text not null,
+  department_id  uuid references public.departments (id) on delete set null,
+  created_by     uuid references auth.users (id) on delete set null,
+  created_at     timestamptz not null default now()
 );
+alter table public.authorized_reps add column if not exists department_id uuid references public.departments (id) on delete set null;
 
 -- -----------------------------------------------------------------------------
 -- Domain Tables
@@ -284,12 +295,13 @@ begin
 
   select * into v_auth from public.authorized_reps where email = v_email;
   if found then
-    insert into public.profiles (id, email, full_name, role, active)
-    values (new.id, v_email, v_auth.full_name, 'rep', true)
+    insert into public.profiles (id, email, full_name, role, department_id, active)
+    values (new.id, v_email, v_auth.full_name, 'rep', v_auth.department_id, true)
     on conflict (id) do update
-      set email = excluded.email,
-          full_name = excluded.full_name,
-          role = 'rep';
+      set email         = excluded.email,
+          full_name     = excluded.full_name,
+          department_id = coalesce(excluded.department_id, public.profiles.department_id),
+          role          = 'rep';
     delete from public.authorized_reps where email = v_email;
     return new;
   end if;
@@ -504,12 +516,25 @@ for each row execute function public.sessions_normalize();
 -- Row level security
 -- -----------------------------------------------------------------------------
 
+alter table public.departments     enable row level security;
 alter table public.profiles        enable row level security;
 alter table public.authorized_reps enable row level security;
 alter table public.classes         enable row level security;
 alter table public.students        enable row level security;
 alter table public.sessions        enable row level security;
 alter table public.attendance      enable row level security;
+
+-- departments
+drop policy if exists departments_read_all on public.departments;
+create policy departments_read_all on public.departments
+  for select to authenticated
+  using (true);
+
+drop policy if exists departments_admin_all on public.departments;
+create policy departments_admin_all on public.departments
+  for all to authenticated
+  using (public.is_super_admin())
+  with check (public.is_super_admin());
 
 -- profiles
 drop policy if exists profiles_self_or_admin_read on public.profiles;
@@ -669,11 +694,96 @@ begin
 end;
 $$;
 
+-- -----------------------------------------------------------------------------
+-- RPC: Departments management (Super Admin)
+-- -----------------------------------------------------------------------------
+
+drop function if exists public.list_departments();
+create or replace function public.list_departments()
+returns table (
+  id         uuid,
+  name       text,
+  created_at timestamptz,
+  rep_count  bigint
+)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_active_rep() then
+    raise exception 'PERMISSION';
+  end if;
+
+  return query
+  select
+    d.id,
+    d.name,
+    d.created_at,
+    count(p.id) as rep_count
+  from public.departments d
+  left join public.profiles p on p.department_id = d.id and p.role = 'rep'
+  group by d.id
+  order by lower(d.name) asc;
+end;
+$$;
+
+create or replace function public.create_department(p_name text)
+returns public.departments
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_name text := regexp_replace(trim(coalesce(p_name, '')), '\s+', ' ', 'g');
+  v_row  public.departments;
+begin
+  if not public.is_super_admin() then
+    raise exception 'PERMISSION';
+  end if;
+
+  if char_length(v_name) < 2 then
+    raise exception 'INVALID_DEPARTMENT';
+  end if;
+
+  if exists (select 1 from public.departments where lower(trim(name)) = lower(v_name)) then
+    raise exception 'DEPARTMENT_EXISTS';
+  end if;
+
+  insert into public.departments (name)
+  values (v_name)
+  returning * into v_row;
+
+  return v_row;
+end;
+$$;
+
+create or replace function public.delete_department(p_department_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_super_admin() then
+    raise exception 'PERMISSION';
+  end if;
+
+  delete from public.departments where id = p_department_id;
+  if not found then
+    raise exception 'NOT_FOUND';
+  end if;
+end;
+$$;
+
 -- Direct server-side Class Rep creation by Super Admin (no SMTP / 503 errors).
+drop function if exists public.admin_create_rep(text, text, text);
 create or replace function public.admin_create_rep(
-  p_full_name text,
-  p_email     text,
-  p_password  text
+  p_full_name     text,
+  p_email         text,
+  p_password      text,
+  p_department_id uuid default null
 )
 returns public.profiles
 language plpgsql
@@ -694,19 +804,26 @@ begin
     raise exception 'REP_EXISTS';
   end if;
 
-  insert into public.authorized_reps (email, full_name, created_by)
-  values (v_email, v_name, auth.uid())
-  on conflict (email) do update set full_name = excluded.full_name;
+  if p_department_id is not null and not exists (select 1 from public.departments where id = p_department_id) then
+    raise exception 'INVALID_DEPARTMENT';
+  end if;
+
+  insert into public.authorized_reps (email, full_name, department_id, created_by)
+  values (v_email, v_name, p_department_id, auth.uid())
+  on conflict (email) do update
+    set full_name     = excluded.full_name,
+        department_id = excluded.department_id;
 
   v_uid := public.upsert_auth_user(v_email, p_password, v_name);
 
-  insert into public.profiles (id, email, full_name, role, active)
-  values (v_uid, v_email, v_name, 'rep', true)
+  insert into public.profiles (id, email, full_name, role, department_id, active)
+  values (v_uid, v_email, v_name, 'rep', p_department_id, true)
   on conflict (id) do update
-    set email     = excluded.email,
-        full_name = excluded.full_name,
-        role      = 'rep',
-        active    = true
+    set email         = excluded.email,
+        full_name     = excluded.full_name,
+        department_id = excluded.department_id,
+        role          = 'rep',
+        active        = true
   returning * into v_row;
 
   delete from public.authorized_reps where email = v_email;
@@ -714,7 +831,12 @@ begin
 end;
 $$;
 
-create or replace function public.pre_authorize_rep(p_email text, p_full_name text)
+drop function if exists public.pre_authorize_rep(text, text);
+create or replace function public.pre_authorize_rep(
+  p_email         text,
+  p_full_name     text,
+  p_department_id uuid default null
+)
 returns void
 language plpgsql
 security definer
@@ -740,21 +862,30 @@ begin
     raise exception 'REP_EXISTS';
   end if;
 
-  insert into authorized_reps (email, full_name, created_by)
-  values (v_email, v_name, auth.uid())
-  on conflict (email) do update set full_name = excluded.full_name;
+  if p_department_id is not null and not exists (select 1 from public.departments where id = p_department_id) then
+    raise exception 'INVALID_DEPARTMENT';
+  end if;
+
+  insert into authorized_reps (email, full_name, department_id, created_by)
+  values (v_email, v_name, p_department_id, auth.uid())
+  on conflict (email) do update
+    set full_name     = excluded.full_name,
+        department_id = excluded.department_id;
 end;
 $$;
 
+drop function if exists public.list_reps();
 create or replace function public.list_reps()
 returns table (
-  id            uuid,
-  email         text,
-  full_name     text,
-  active        boolean,
-  created_at    timestamptz,
-  class_count   bigint,
-  student_count bigint
+  id              uuid,
+  email           text,
+  full_name       text,
+  department_id   uuid,
+  department_name text,
+  active          boolean,
+  created_at      timestamptz,
+  class_count     bigint,
+  student_count   bigint
 )
 language plpgsql
 stable
@@ -771,15 +902,18 @@ begin
     p.id,
     p.email,
     p.full_name,
+    p.department_id,
+    d.name as department_name,
     p.active,
     p.created_at,
     count(distinct c.id) as class_count,
     count(st.id) as student_count
   from profiles p
+  left join departments d on d.id = p.department_id
   left join classes c on c.owner_id = p.id
   left join students st on st.class_id = c.id
   where p.role = 'rep'
-  group by p.id
+  group by p.id, d.name
   order by p.created_at desc;
 end;
 $$;
@@ -999,6 +1133,7 @@ $$;
 -- -----------------------------------------------------------------------------
 
 grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on table public.departments to authenticated;
 grant select, insert, update, delete on table public.profiles to authenticated;
 grant select, insert, update, delete on table public.authorized_reps to authenticated;
 grant select, insert, update, delete on table public.classes to authenticated;
@@ -1008,8 +1143,11 @@ grant select, insert, update, delete on table public.attendance to authenticated
 
 revoke all on function public.claim_student(text, text, text) from public, anon;
 revoke all on function public.check_in(uuid, float8, float8, float8) from public, anon;
-revoke all on function public.pre_authorize_rep(text, text) from public, anon;
-revoke all on function public.admin_create_rep(text, text, text) from public, anon;
+revoke all on function public.list_departments() from public, anon;
+revoke all on function public.create_department(text) from public, anon;
+revoke all on function public.delete_department(uuid) from public, anon;
+revoke all on function public.pre_authorize_rep(text, text, uuid) from public, anon;
+revoke all on function public.admin_create_rep(text, text, text, uuid) from public, anon;
 revoke all on function public.list_reps() from public, anon;
 revoke all on function public.set_rep_active(uuid, boolean) from public, anon;
 revoke all on function public.delete_rep(uuid) from public, anon;
@@ -1021,8 +1159,11 @@ grant execute on function public.ensure_first_super_admin(text) to authenticated
 grant execute on function public.get_class_by_code(text) to anon, authenticated;
 grant execute on function public.claim_student(text, text, text) to authenticated;
 grant execute on function public.check_in(uuid, float8, float8, float8) to authenticated;
-grant execute on function public.pre_authorize_rep(text, text) to authenticated;
-grant execute on function public.admin_create_rep(text, text, text) to authenticated;
+grant execute on function public.list_departments() to authenticated;
+grant execute on function public.create_department(text) to authenticated;
+grant execute on function public.delete_department(uuid) to authenticated;
+grant execute on function public.pre_authorize_rep(text, text, uuid) to authenticated;
+grant execute on function public.admin_create_rep(text, text, text, uuid) to authenticated;
 grant execute on function public.list_reps() to authenticated;
 grant execute on function public.set_rep_active(uuid, boolean) to authenticated;
 grant execute on function public.delete_rep(uuid) to authenticated;

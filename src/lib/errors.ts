@@ -26,6 +26,8 @@ const MESSAGES: Record<string, string | MessageFor> = {
   SIGNUP_NOT_ALLOWED:
     'A Super Admin account already exists, so self-registration is locked. Switch to the "Sign in" tab to log in with your Super Admin account.',
   REP_EXISTS: 'A class rep with that email already exists.',
+  DEPARTMENT_EXISTS: 'That department already exists.',
+  INVALID_DEPARTMENT: 'Enter a valid department name (at least 2 characters).',
   ACCOUNT_SUSPENDED: 'Your class rep account has been suspended. Contact the Super Admin.',
   STUDENT_SUSPENDED: 'Your account has been suspended by your class rep.',
   INVALID_EMAIL: 'Enter a valid email address.',

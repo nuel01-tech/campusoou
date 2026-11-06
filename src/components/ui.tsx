@@ -92,19 +92,30 @@ export const TextField = forwardRef<HTMLInputElement, FieldProps>(function TextF
 interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   label: string;
   hint?: ReactNode;
+  error?: string | null;
   children: ReactNode;
 }
 
-export function SelectField({ label, hint, id, children, ...rest }: SelectProps) {
+export function SelectField({ label, hint, error, id, className = '', children, ...rest }: SelectProps) {
   const autoId = useId();
   const selectId = id ?? autoId;
+  const hintId = `${selectId}-hint`;
   return (
-    <div className="field">
+    <div className={`field ${error ? 'field-invalid' : ''} ${className}`}>
       <label htmlFor={selectId}>{label}</label>
-      <select id={selectId} {...rest}>
+      <select
+        id={selectId}
+        aria-invalid={Boolean(error) || undefined}
+        aria-describedby={hint || error ? hintId : undefined}
+        {...rest}
+      >
         {children}
       </select>
-      {hint && <p className="field-hint">{hint}</p>}
+      {(error || hint) && (
+        <p id={hintId} className={error ? 'field-error' : 'field-hint'}>
+          {error ?? hint}
+        </p>
+      )}
     </div>
   );
 }

@@ -2,11 +2,19 @@
 
 export type StaffRole = 'super_admin' | 'rep';
 
+export interface Department {
+  id: string;
+  name: string;
+  created_at: string;
+  rep_count: number;
+}
+
 export interface Profile {
   id: string;
   email: string;
   full_name: string;
   role: StaffRole;
+  department_id?: string | null;
   active: boolean;
   created_at: string;
 }
@@ -15,6 +23,8 @@ export interface RepSummary {
   id: string;
   email: string;
   full_name: string;
+  department_id: string | null;
+  department_name: string | null;
   active: boolean;
   created_at: string;
   class_count: number;
