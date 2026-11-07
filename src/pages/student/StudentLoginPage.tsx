@@ -6,7 +6,7 @@ import { toAppError } from '@/lib/errors';
 import { Alert, Button, ErrorAlert, PageHeader, PageLoader, TextField } from '@/components/ui';
 
 export function StudentLoginPage() {
-  const { ready, role } = useAuth();
+  const { ready, role, refreshAuth } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -24,6 +24,7 @@ export function StudentLoginPage() {
     setError(null);
     try {
       await signInStudent(email, password);
+      await refreshAuth();
       navigate('/me', { replace: true });
     } catch (err) {
       setError(toAppError(err));
