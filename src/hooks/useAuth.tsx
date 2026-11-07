@@ -26,20 +26,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
 
   const syncSession = useCallback(async (s: AuthSession | null) => {
-    setSession(s);
     const user = s?.user ?? null;
     if (!user) {
+      setSession(null);
       setProfile(null);
       setStudentAccount(false);
       setReady(true);
       return;
     }
+
     if (user.is_anonymous) {
+      const claimed = await isStudentUser(user.id).catch(() => false);
+      setSession(s);
       setProfile(null);
-      setStudentAccount(true);
+      setStudentAccount(claimed);
       setReady(true);
       return;
     }
+
     try {
       const p = await getMyProfile(user.id);
       if (p && !p.active) {
@@ -48,10 +52,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfile(null);
         setStudentAccount(false);
       } else {
+        const isStu = !p ? await isStudentUser(user.id) : false;
+        setSession(s);
         setProfile(p);
-        setStudentAccount(!p && await isStudentUser(user.id));
+        setStudentAccount(isStu);
       }
     } catch {
+      setSession(s);
       setProfile(null);
       setStudentAccount(false);
     } finally {
@@ -86,7 +93,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AuthState>(() => {
     const user = session?.user ?? null;
-    const role: Role | null = !user ? null : user.is_anonymous || studentAccount ? 'student' : (profile?.role ?? null);
+    const role: Role | null = !user ? null : studentAccount ? 'student' : (profile?.role ?? null);
     return { ready, user, profile, role, refreshAuth };
   }, [ready, session, profile, studentAccount, refreshAuth]);
 

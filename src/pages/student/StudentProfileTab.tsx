@@ -1,8 +1,14 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { Alert, Badge, Button, TextField } from '@/components/ui';
+import { KeyRoundIcon, ShieldCheckIcon } from '@/components/icons';
 import { useToast } from '@/hooks/useToast';
-import { createStudentLogin, updateStudentCredentials } from '@/services/auth';
+import { toAppError } from '@/lib/errors';
+import {
+  createStudentLogin,
+  hasPermanentStudentLogin,
+  updateStudentCredentials,
+} from '@/services/auth';
 import { updateMyStudentProfile } from '@/services/student';
 import type { Student } from '@/types';
 
@@ -28,6 +34,15 @@ export function StudentProfileTab({ student, className, user, onSaved, onAuthUpd
   const [accountError, setAccountError] = useState('');
   const [accountDone, setAccountDone] = useState(false);
 
+  const hasPermanentLogin = hasPermanentStudentLogin(user);
+
+  useEffect(() => {
+    if (!editing) {
+      setFullName(student.full_name);
+      setMatricNo(student.matric_no);
+    }
+  }, [student.full_name, student.matric_no, editing]);
+
   const nextMatricChange = useMemo(() => {
     if (!student.matric_changed_at) return null;
     const next = new Date(new Date(student.matric_changed_at).getTime() + 3 * 24 * 60 * 60 * 1000);
@@ -51,7 +66,7 @@ export function StudentProfileTab({ student, className, user, onSaved, onAuthUpd
       setEditing(false);
       toast('Your student profile has been updated.');
     } catch (error) {
-      setProfileError(error instanceof Error ? error.message : 'Could not update your profile.');
+      setProfileError(toAppError(error).message);
     } finally {
       setSaving(false);
     }
@@ -60,13 +75,16 @@ export function StudentProfileTab({ student, className, user, onSaved, onAuthUpd
   const saveAccount = async (event: FormEvent) => {
     event.preventDefault();
     setAccountError('');
-    if (password !== confirmPassword) {
+    setAccountDone(false);
+
+    if (password && password !== confirmPassword) {
       setAccountError('The passwords do not match.');
       return;
     }
+
     setAccountBusy(true);
     try {
-      if (user?.is_anonymous) {
+      if (!hasPermanentLogin) {
         if (!email.trim()) throw new Error('Enter an email address to create a permanent login.');
         if (password.length < 8) throw new Error('Your password must contain at least 8 characters.');
         await createStudentLogin(email, password);
@@ -80,7 +98,7 @@ export function StudentProfileTab({ student, className, user, onSaved, onAuthUpd
       setAccountDone(true);
       toast('Your student login details have been saved.');
     } catch (error) {
-      setAccountError(error instanceof Error ? error.message : 'Could not update your login details.');
+      setAccountError(toAppError(error).message);
     } finally {
       setAccountBusy(false);
     }
@@ -92,9 +110,11 @@ export function StudentProfileTab({ student, className, user, onSaved, onAuthUpd
         <div className="section-head">
           <div>
             <h2>My Student Profile</h2>
-            <p className="muted small">Your saved details are read-only until you choose to edit them.</p>
+            <p className="muted small">Your saved academic details are read-only until you choose to edit them.</p>
           </div>
-          <Badge tone="ok">Student record</Badge>
+          <Badge tone="ok" icon={<ShieldCheckIcon size={12} />}>
+            Student Record
+          </Badge>
         </div>
 
         {!editing ? (
@@ -102,22 +122,59 @@ export function StudentProfileTab({ student, className, user, onSaved, onAuthUpd
             <div className="table-wrap">
               <table className="table">
                 <tbody>
-                  <tr><th style={{ width: '210px' }}>Full name</th><td><strong>{student.full_name}</strong></td></tr>
-                  <tr><th>Matric number</th><td className="mono">{student.matric_no}</td></tr>
-                  <tr><th>Class / Cohort</th><td>{className}</td></tr>
-                  <tr><th>Student status</th><td>{student.suspended ? <Badge tone="danger">Suspended</Badge> : <Badge tone="ok">Active</Badge>}</td></tr>
-                  <tr><th>Profile claimed</th><td>{student.claimed_at ? new Date(student.claimed_at).toLocaleDateString() : 'Not available'}</td></tr>
+                  <tr>
+                    <th style={{ width: '210px' }}>Full name</th>
+                    <td>
+                      <strong>{student.full_name}</strong>
+                    </td>
+                  </tr>
+                  <tr>
+                    <th>Matric number</th>
+                    <td className="mono">{student.matric_no}</td>
+                  </tr>
+                  <tr>
+                    <th>Class / Cohort</th>
+                    <td>{className}</td>
+                  </tr>
+                  <tr>
+                    <th>Student status</th>
+                    <td>
+                      {student.suspended ? (
+                        <Badge tone="danger">Suspended</Badge>
+                      ) : (
+                        <Badge tone="ok">Active</Badge>
+                      )}
+                    </td>
+                  </tr>
+                  <tr>
+                    <th>Profile claimed</th>
+                    <td>
+                      {student.claimed_at
+                        ? new Date(student.claimed_at).toLocaleDateString()
+                        : 'Not available'}
+                    </td>
+                  </tr>
                 </tbody>
               </table>
             </div>
             <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
-              <p className="fine-print">Your class, attendance history, passkey and device binding cannot be changed here.</p>
-              <Button variant="secondary" onClick={() => setEditing(true)}>Edit Profile</Button>
+              <p className="fine-print">
+                Your class cohort, attendance history, passkey, and device binding cannot be changed here.
+              </p>
+              <Button variant="secondary" onClick={() => setEditing(true)}>
+                Edit Profile
+              </Button>
             </div>
           </>
         ) : (
           <form className="stack" onSubmit={saveProfile}>
-            <TextField label="Full name" value={fullName} onChange={(e) => setFullName(e.target.value)} required maxLength={160} />
+            <TextField
+              label="Full name"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              required
+              maxLength={160}
+            />
             <TextField
               label="Matric number"
               value={matricNo}
@@ -125,47 +182,85 @@ export function StudentProfileTab({ student, className, user, onSaved, onAuthUpd
               required
               maxLength={40}
               disabled={Boolean(nextMatricChange)}
-              hint={nextMatricChange
-                ? `Matric number is locked until ${nextMatricChange.toLocaleString()}. You can still update your name.`
-                : 'You can change your matric number once every 3 days.'}
+              hint={
+                nextMatricChange
+                  ? `Matric number is locked until ${nextMatricChange.toLocaleString()}. You can still update your name.`
+                  : 'You can change your matric number once every 3 days.'
+              }
             />
-            {profileError && <Alert tone="error" title="Profile not saved">{profileError}</Alert>}
+            {profileError && (
+              <Alert tone="error" title="Profile not saved">
+                {profileError}
+              </Alert>
+            )}
             <div className="row" style={{ justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-              <Button type="button" variant="ghost" onClick={cancelEdit}>Cancel</Button>
-              <Button type="submit" loading={saving} disabled={!fullName.trim() || !matricNo.trim()}>Save Profile</Button>
+              <Button type="button" variant="ghost" onClick={cancelEdit}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                loading={saving}
+                disabled={!fullName.trim() || !matricNo.trim()}
+              >
+                Save Profile
+              </Button>
             </div>
           </form>
         )}
       </section>
 
       <section className="panel stack">
-        <div>
-          <h2>Login & Account Security</h2>
-          <p className="muted small">
-            {user?.is_anonymous
-              ? 'Create an email and password now. This upgrades the account you already claimed, preserving your attendance and passkey.'
-              : 'Your permanent student login is active. You can update your email address or password below.'}
-          </p>
+        <div className="section-head">
+          <div>
+            <h2>Login & Account Security</h2>
+            <p className="muted small">
+              {!hasPermanentLogin
+                ? 'Create an email and password now. This upgrades the account you already claimed, preserving your attendance and passkey.'
+                : 'Your permanent student login is active. You can update your email address or password below.'}
+            </p>
+          </div>
+          <Badge tone={hasPermanentLogin ? 'ok' : 'warn'} icon={<KeyRoundIcon size={12} />}>
+            {hasPermanentLogin ? 'Permanent Login Active' : 'Setup Recommended'}
+          </Badge>
         </div>
-        {user?.email && <p className="small"><strong>Current login email:</strong> {user.email}</p>}
-        {accountDone && <Alert tone="success" title="Student login is ready">You can now sign out and sign back in with the email address and password you just saved.</Alert>}
+
+        {user?.email && (
+          <div className="row" style={{ gap: '0.5rem' }}>
+            <span className="muted small">Current login email:</span>
+            <strong className="mono small">{user.email}</strong>
+          </div>
+        )}
+
+        {accountDone && (
+          <Alert tone="success" title="Student login is ready">
+            Your login credentials are saved. You can now safely sign out and sign back in anytime at{' '}
+            <strong className="mono">/student/login</strong> using your email address and password.
+          </Alert>
+        )}
+
         <form className="stack" onSubmit={saveAccount}>
           <TextField
-            label={user?.is_anonymous ? 'Email address' : 'New email address (optional)'}
+            label={!hasPermanentLogin ? 'Email address' : 'New email address (optional)'}
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            placeholder={user?.email || 'student@oouagoiwoye.edu.ng'}
             autoComplete="email"
-            required={Boolean(user?.is_anonymous)}
-            hint={user?.is_anonymous ? 'Use an email address you can access.' : 'Leave blank to keep your current email.'}
+            required={!hasPermanentLogin}
+            hint={
+              !hasPermanentLogin
+                ? 'Use an email address you will remember when signing in.'
+                : 'Leave blank to keep your current login email.'
+            }
           />
           <TextField
-            label={user?.is_anonymous ? 'Create password' : 'New password (optional)'}
+            label={!hasPermanentLogin ? 'Create password' : 'New password (optional)'}
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            placeholder="At least 8 characters"
             autoComplete="new-password"
-            required={Boolean(user?.is_anonymous)}
+            required={!hasPermanentLogin}
             hint="At least 8 characters."
           />
           <TextField
@@ -173,15 +268,32 @@ export function StudentProfileTab({ student, className, user, onSaved, onAuthUpd
             type="password"
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="Re-enter password"
             autoComplete="new-password"
-            required={Boolean(password)}
+            required={!hasPermanentLogin || Boolean(password)}
           />
-          {accountError && <Alert tone="error" title="Account update failed">{accountError}</Alert>}
-          <Button type="submit" loading={accountBusy} disabled={user?.is_anonymous ? (!email.trim() || password.length < 8 || !confirmPassword) : (!email.trim() && !password)}>
-            {user?.is_anonymous ? 'Create Student Login' : 'Update Login Details'}
-          </Button>
+          {accountError && (
+            <Alert tone="error" title="Account update failed">
+              {accountError}
+            </Alert>
+          )}
+          <div className="row" style={{ justifyContent: 'flex-end' }}>
+            <Button
+              type="submit"
+              loading={accountBusy}
+              disabled={
+                !hasPermanentLogin
+                  ? !email.trim() || password.length < 8 || !confirmPassword
+                  : !email.trim() && !password
+              }
+            >
+              {!hasPermanentLogin ? 'Create Student Login' : 'Update Login Details'}
+            </Button>
+          </div>
         </form>
-        <p className="fine-print">Never share your password or passkey. Your matric number, class placement and device identity are protected separately from login credentials.</p>
+        <p className="fine-print">
+          Never share your password or passkey. Your matric number, class placement, and device identity are protected separately from login credentials.
+        </p>
       </section>
     </div>
   );

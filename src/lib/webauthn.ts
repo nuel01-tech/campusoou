@@ -210,6 +210,15 @@ export async function getOrCreateDeviceToken(): Promise<string> {
   return created;
 }
 
+export async function saveDeviceToken(token: string): Promise<void> {
+  try {
+    window.localStorage.setItem(LS_DEVICE_TOKEN_KEY, token);
+  } catch {
+    // ignore
+  }
+  await writeIdb(LS_DEVICE_TOKEN_KEY, token);
+}
+
 export function getSavedPasskeyId(): string | null {
   try {
     return window.localStorage.getItem(LS_PASSKEY_ID_KEY);
@@ -305,8 +314,9 @@ export async function registerDevicePasskey(
 }
 
 /**
- * Verifies the student's hardware Passkey AND persistent device token AT CHECK-IN TIME.
- * Only succeeds on the exact physical phone & normal browser session that claimed the account.
+ * Verifies the student's hardware Passkey AND persistent device token AT CHECK-IN TIME
+ * (or when re-verifying a registered phone after signing in with email & password).
+ * Only succeeds on the exact physical phone & normal browser session that holds the hardware Passkey.
  */
 export async function verifyDevicePasskey(
   expectedPasskeyId: string | null | undefined,
@@ -323,7 +333,8 @@ export async function verifyDevicePasskey(
   }
 
   const localDeviceToken = await getExistingDeviceToken();
-  if (!localDeviceToken || localDeviceToken !== expectedDeviceToken) {
+  // If another student's device token is stored on this browser, block before prompting
+  if (localDeviceToken && localDeviceToken !== expectedDeviceToken) {
     throw appError('DEVICE_MISMATCH');
   }
 
@@ -356,7 +367,73 @@ export async function verifyDevicePasskey(
       throw appError('DEVICE_MISMATCH');
     }
 
-    return { passkeyId: actualPasskeyId, deviceToken: localDeviceToken };
+    // If local storage was cleared (e.g. student signed back in with email/password on their phone),
+    // restore the device token vault after cryptographic hardware passkey verification succeeds.
+    if (!localDeviceToken) {
+      await saveDeviceToken(expectedDeviceToken);
+      await saveLocalPasskeyId(actualPasskeyId);
+    }
+
+    return { passkeyId: actualPasskeyId, deviceToken: expectedDeviceToken };
+  } catch (err: unknown) {
+    if (err && typeof err === 'object' && 'code' in err) {
+      throw err;
+    }
+    const domErr = err as { name?: string };
+    if (domErr?.name === 'NotAllowedError' || domErr?.name === 'AbortError') {
+      throw appError('PASSKEY_CANCELLED');
+    }
+    throw appError('DEVICE_MISMATCH');
+  }
+}
+
+/**
+ * Cryptographically verifies that this physical device holds `expectedPasskeyId`
+ * and restores `expectedDeviceToken` to the browser vault (used when a student
+ * signs back in with email/password after clearing browser storage).
+ */
+export async function restoreDeviceWithPasskey(
+  expectedPasskeyId: string,
+  expectedDeviceToken: string,
+): Promise<string> {
+  await assertNotIncognito();
+
+  if (!isPasskeySupported()) {
+    throw appError('PASSKEY_UNSUPPORTED');
+  }
+
+  const challenge = new Uint8Array(32);
+  crypto.getRandomValues(challenge);
+
+  try {
+    const assertion = (await navigator.credentials.get({
+      publicKey: {
+        challenge,
+        rpId: window.location.hostname,
+        allowCredentials: [
+          {
+            id: base64UrlToBytes(expectedPasskeyId),
+            type: 'public-key',
+            transports: ['internal'],
+          },
+        ],
+        userVerification: 'required',
+        timeout: 60000,
+      },
+    })) as PublicKeyCredential | null;
+
+    if (!assertion || !assertion.rawId) {
+      throw appError('PASSKEY_CANCELLED');
+    }
+
+    const actualPasskeyId = bytesToBase64Url(assertion.rawId);
+    if (actualPasskeyId !== expectedPasskeyId) {
+      throw appError('DEVICE_MISMATCH');
+    }
+
+    await saveDeviceToken(expectedDeviceToken);
+    await saveLocalPasskeyId(actualPasskeyId);
+    return expectedDeviceToken;
   } catch (err: unknown) {
     if (err && typeof err === 'object' && 'code' in err) {
       throw err;

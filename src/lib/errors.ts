@@ -31,7 +31,13 @@ const MESSAGES: Record<string, string | MessageFor> = {
   ACCOUNT_SUSPENDED: 'Your class rep account has been suspended. Contact the Super Admin.',
   STUDENT_SUSPENDED: 'Your account has been suspended by your class rep.',
   INVALID_EMAIL: 'Enter a valid email address.',
+  EMAIL_ALREADY_IN_USE: 'That email address is already registered to another account.',
   INVALID_NAME: 'Enter a full name (at least 2 characters).',
+  INVALID_STUDENT_NAME: 'Enter your full name (between 2 and 160 characters).',
+  INVALID_MATRIC_NUMBER: 'Enter a valid matric number (between 2 and 40 characters).',
+  MATRIC_ALREADY_IN_USE: 'That matric number is already registered in your class.',
+  STUDENT_ENROLLMENT_NOT_FOUND: 'Your student enrollment record could not be found. Claim your account first.',
+  AUTH_REQUIRED: 'Your session has expired. Please sign in again.',
   WEAK_PASSWORD: 'Use at least 8 characters for the password.',
   NOT_FOUND: 'That record could not be found.',
   DB_NOT_MIGRATED:
@@ -131,6 +137,12 @@ export function toAppError(e: unknown): AppError {
     // Codes raised by our SQL functions are plain upper-snake strings.
     if (/^[A-Z_]+$/.test(raw) && raw in MESSAGES) {
       return appError(raw, e.details ?? undefined);
+    }
+    if (/^MATRIC_CHANGE_COOLDOWN:/i.test(raw)) {
+      return new AppError(
+        'MATRIC_CHANGE_COOLDOWN',
+        raw.replace(/^MATRIC_CHANGE_COOLDOWN:\s*/i, ''),
+      );
     }
     if (/SIGNUP_NOT_ALLOWED|Database error saving new user/i.test(raw)) {
       return appError('SIGNUP_NOT_ALLOWED');

@@ -1,6 +1,6 @@
 /** Data access used by the student-facing pages. */
 import { supabase } from './db';
-import { appError, toAppError, unwrap } from '@/lib/errors';
+import { AppError, appError, toAppError, unwrap } from '@/lib/errors';
 import type { Attendance, GeoFix, Session, Student } from '@/types';
 
 export interface MyEnrollment {
@@ -51,13 +51,21 @@ export async function claimStudent(
 }
 
 export async function updateMyStudentProfile(fullName: string, matricNo: string): Promise<Student> {
+  const cleanName = fullName.trim().replace(/\s+/g, ' ');
+  const cleanMatric = matricNo.trim().toUpperCase().replace(/\s+/g, '');
+
+  if (cleanName.length < 2 || cleanName.length > 160) {
+    throw new AppError('VALIDATION', 'Enter your full name (between 2 and 160 characters).');
+  }
+  if (cleanMatric.length < 2 || cleanMatric.length > 40) {
+    throw new AppError('VALIDATION', 'Enter a valid matric number (between 2 and 40 characters).');
+  }
+
   const { data, error } = await supabase.rpc('update_my_student_profile', {
-    p_full_name: fullName.trim(),
-    p_matric_no: matricNo.trim(),
+    p_full_name: cleanName,
+    p_matric_no: cleanMatric,
   });
   if (error) {
-    if (/MATRIC_CHANGE_COOLDOWN/i.test(error.message)) throw new Error(error.message);
-    if (/MATRIC_ALREADY_IN_USE/i.test(error.message)) throw new Error('That matric number is already registered in your class.');
     throw toAppError(error);
   }
   return data as Student;

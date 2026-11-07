@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
-import { signOut } from '@/services/auth';
+import { hasPermanentStudentLogin, signOut } from '@/services/auth';
 import { listClasses } from '@/services/classes';
 import { toAppError } from '@/lib/errors';
 import { Badge, getInitials } from './ui';
@@ -46,7 +46,7 @@ interface NavEntry {
 const ACTIVE_CLASS_KEY = 'campuspulse_active_class_id';
 
 export function Shell({ children }: { children: ReactNode }) {
-  const { role, profile, user } = useAuth();
+  const { role, profile, user, refreshAuth } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -82,13 +82,17 @@ export function Shell({ children }: { children: ReactNode }) {
   }, []);
 
   const handleSignOut = async () => {
-    if (role === 'student' && (user?.is_anonymous || !user?.email)) {
-      toast('Create your student email and password login before signing out, so you can access your account again.', 'error');
-      navigate('/me', { replace: true });
+    if (role === 'student' && !hasPermanentStudentLogin(user)) {
+      toast(
+        'Create your student email and password login in My Profile before signing out, so you can access your account again.',
+        'error',
+      );
+      navigate('/me?tab=profile', { replace: true });
       return;
     }
     try {
       await signOut();
+      await refreshAuth();
       navigate('/', { replace: true });
     } catch (e) {
       toast(toAppError(e).message, 'error');
@@ -272,7 +276,7 @@ export function Shell({ children }: { children: ReactNode }) {
           label: 'My Profile',
           to: '/me?tab=profile',
           match: (p, sp) => p === '/me' && sp.get('tab') === 'profile',
-          icon: <SmartphoneIcon size={16} />,
+          icon: <GraduationCapIcon size={16} />,
         },
       ];
     }
@@ -357,12 +361,19 @@ export function Shell({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [primaryNav, classSubNav, role, userClasses, activeClass]);
 
-  const initials = getInitials(profile?.full_name || user?.email || 'CP');
+  const userDisplayName =
+    profile?.full_name ||
+    (typeof user?.user_metadata?.full_name === 'string' && user.user_metadata.full_name) ||
+    user?.email ||
+    'Student Device';
+  const initials = getInitials(userDisplayName || 'CP');
 
   // Public / Marketing / Auth shell
   if (!showSaasSidebar) {
     const onAuthPage =
-      location.pathname.startsWith('/rep/login') || location.pathname.startsWith('/admin/');
+      location.pathname.startsWith('/student/login') ||
+      location.pathname.startsWith('/rep/login') ||
+      location.pathname.startsWith('/admin/');
     return (
       <div className="shell">
         <header className="topbar">
@@ -390,6 +401,9 @@ export function Shell({ children }: { children: ReactNode }) {
             ) : (
               !onAuthPage && (
                 <div className="topbar-user">
+                  <Link to="/student/login" className="topbar-link">
+                    Student Sign In
+                  </Link>
                   <Link to="/rep/login" className="topbar-link">
                     Class Rep Sign In
                   </Link>
@@ -588,7 +602,7 @@ export function Shell({ children }: { children: ReactNode }) {
             </div>
             <div className="saas-user-meta">
               <strong className="saas-user-name">
-                {profile?.full_name || user?.email || 'Student Device'}
+                {userDisplayName}
               </strong>
               <span className="saas-user-sub">
                 {user?.email || (role === 'student' ? 'Biometric Passkey Linked' : '')}

@@ -4,6 +4,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useAction, useAsync, useNow, usePolling } from '@/hooks/useAsync';
 import { useToast } from '@/hooks/useToast';
 import { StudentProfileTab } from '@/pages/student/StudentProfileTab';
+import { hasPermanentStudentLogin } from '@/services/auth';
 import {
   bindStudentPasskey,
   getMyEnrollment,
@@ -14,6 +15,7 @@ import {
   detectIncognitoMode,
   getExistingDeviceToken,
   registerDevicePasskey,
+  restoreDeviceWithPasskey,
 } from '@/lib/webauthn';
 import { CheckInCard } from '@/features/checkin/CheckInCard';
 import {
@@ -30,6 +32,7 @@ import { KpiStatGrid, VerticalTabs, type VerticalTabItem } from '@/components/sa
 import {
   CalendarDaysIcon,
   ClipboardCheckIcon,
+  GraduationCapIcon,
   KeyRoundIcon,
   RefreshCwIcon,
   ShieldCheckIcon,
@@ -95,6 +98,18 @@ function StudentDashboard() {
     return updated;
   });
 
+  // For students who signed back in with email/password on their registered phone after clearing browser storage:
+  const restorePasskeyAction = useAction(async () => {
+    if (!me.data?.student.passkey_id || !me.data?.student.device_token) return null;
+    const token = await restoreDeviceWithPasskey(
+      me.data.student.passkey_id,
+      me.data.student.device_token,
+    );
+    await localToken.reload({ silent: true });
+    toast('Phone passkey verified and device vault restored!');
+    return token;
+  });
+
   if (me.loading || incognito.loading || localToken.loading) return <PageLoader />;
 
   if (incognito.data) {
@@ -141,6 +156,7 @@ function StudentDashboard() {
   const deviceMismatch =
     !needsInitialPasskeyBind &&
     (!localToken.data || localToken.data !== student.device_token);
+  const hasPermanentLogin = hasPermanentStudentLogin(user);
 
   const addCheckIn = (row: Attendance) => {
     history.setData((prev) => [{ ...row, session: null }, ...(prev ?? [])]);
@@ -172,7 +188,8 @@ function StudentDashboard() {
       key: 'profile',
       label: 'My Profile',
       description: 'Personal details & account access',
-      icon: <SmartphoneIcon size={16} />,
+      badge: !hasPermanentLogin ? 'Setup' : undefined,
+      icon: <GraduationCapIcon size={16} />,
     },
   ];
 
@@ -191,7 +208,7 @@ function StudentDashboard() {
             ) : needsInitialPasskeyBind ? (
               <Badge tone="warn">Passkey Pending</Badge>
             ) : deviceMismatch ? (
-              <Badge tone="danger">Device Mismatch</Badge>
+              <Badge tone="danger">Verify Phone Passkey</Badge>
             ) : (
               <Badge tone="ok" icon={<ShieldCheckIcon size={12} />}>
                 Passkey & Phone Locked
@@ -207,7 +224,20 @@ function StudentDashboard() {
         }
       />
 
-
+      {!hasPermanentLogin && activeTab !== 'profile' && (
+        <Alert
+          tone="info"
+          title="Save an Email & Password for Permanent Access"
+          action={
+            <Button size="sm" variant="secondary" onClick={() => setTab('profile')}>
+              Set Up Login
+            </Button>
+          }
+        >
+          Protect your claimed student account before signing out so you can sign back in anytime at{' '}
+          <strong className="mono">/student/login</strong>.
+        </Alert>
+      )}
 
       {needsInitialPasskeyBind && (
         <div className="panel stack">
@@ -231,9 +261,28 @@ function StudentDashboard() {
       )}
 
       {deviceMismatch && (
-        <Alert tone="error" title="Unrecognized Browser or Device">
-          This browser does not match the phone and browser where <strong className="mono">{student.matric_no}</strong> was claimed. Open this page in your normal browser on your registered phone, or ask your Class Rep to click <strong>Reset phone</strong> on the roster.
-        </Alert>
+        <div className="panel stack">
+          <Alert
+            tone="warning"
+            title="Verify Your Registered Phone Passkey"
+            action={
+              <Button
+                size="sm"
+                onClick={() => void restorePasskeyAction.run()}
+                loading={restorePasskeyAction.pending}
+              >
+                <KeyRoundIcon size={14} />
+                <span>Verify My Passkey on This Phone</span>
+              </Button>
+            }
+          >
+            This browser session does not have the local device token for{' '}
+            <strong className="mono">{student.matric_no}</strong> (for example, if you signed in after clearing browser data). If this is your registered phone, tap{' '}
+            <strong>Verify My Passkey on This Phone</strong> to unlock it with your Fingerprint / Face ID, or ask your Class Rep to click{' '}
+            <strong>Reset phone</strong> on the roster if you changed phones.
+          </Alert>
+          <ErrorAlert error={restorePasskeyAction.error} />
+        </div>
       )}
 
       <KpiStatGrid
@@ -255,7 +304,7 @@ function StudentDashboard() {
             value: needsInitialPasskeyBind
               ? 'Setup Required'
               : deviceMismatch
-                ? 'Device Mismatch'
+                ? 'Verify Phone'
                 : 'Strictly Bound',
             sublabel: '1 Phone = 1 Student (No Incognito)',
             tone: !needsInitialPasskeyBind && !deviceMismatch ? 'ok' : 'warn',
@@ -449,7 +498,17 @@ function StudentDashboard() {
                       <th>Device Vault Token</th>
                       <td>
                         {deviceMismatch ? (
-                          <Badge tone="danger">Mismatch with this browser</Badge>
+                          <div className="row" style={{ gap: '0.5rem', flexWrap: 'wrap' }}>
+                            <Badge tone="warn">Needs Passkey Verification</Badge>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => void restorePasskeyAction.run()}
+                              loading={restorePasskeyAction.pending}
+                            >
+                              Verify My Passkey
+                            </Button>
+                          </div>
                         ) : student.device_token ? (
                           <Badge tone="ok">Matched & Verified</Badge>
                         ) : (
@@ -477,4 +536,3 @@ function StudentDashboard() {
     </div>
   );
 }
-

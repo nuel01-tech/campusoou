@@ -19,7 +19,7 @@ export function JoinPage() {
 }
 
 function ClaimForm({ code }: { code: string }) {
-  const { ready, role } = useAuth();
+  const { ready, role, refreshAuth } = useAuth();
   const navigate = useNavigate();
   const toast = useToast();
   const [matric, setMatric] = useState('');
@@ -102,6 +102,7 @@ function ClaimForm({ code }: { code: string }) {
     if (matric.trim().length < 2 || name.trim().split(/\s+/).filter(Boolean).length < 2) return;
     const student = await claim.run();
     if (student) {
+      await refreshAuth();
       toast(`Passkey bound! Welcome, ${titleCase(student.full_name)}`);
       navigate('/me', { replace: true });
     }
