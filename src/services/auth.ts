@@ -200,6 +200,19 @@ export async function createStudentLogin(email: string, password: string): Promi
   if (!data.user) throw new AppError('AUTH', 'Could not finish setting up your student login.');
 }
 
+/** Update credentials for an already claimed permanent student account. */
+export async function updateStudentCredentials(email: string, password: string): Promise<void> {
+  const updates: { email?: string; password?: string } = {};
+  if (email.trim()) updates.email = email.trim().toLowerCase();
+  if (password) {
+    if (password.length < 8) throw new AppError('VALIDATION', 'Your password must contain at least 8 characters.');
+    updates.password = password;
+  }
+  if (!Object.keys(updates).length) throw new AppError('VALIDATION', 'Enter a new email address or password.');
+  const { error } = await supabase.auth.updateUser(updates);
+  if (error) throw toAppError(error);
+}
+
 /** Student password login; staff accounts are rejected from the student portal. */
 export async function signInStudent(email: string, password: string): Promise<void> {
   const { data, error } = await supabase.auth.signInWithPassword({
