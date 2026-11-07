@@ -267,6 +267,13 @@ export function Shell({ children }: { children: ReactNode }) {
           match: (p, sp) => p === '/me' && sp.get('tab') === 'device',
           icon: <KeyRoundIcon size={16} />,
         },
+        {
+          id: 'student-profile',
+          label: 'My Profile',
+          to: '/me?tab=profile',
+          match: (p, sp) => p === '/me' && sp.get('tab') === 'profile',
+          icon: <SmartphoneIcon size={16} />,
+        },
       ];
     }
 

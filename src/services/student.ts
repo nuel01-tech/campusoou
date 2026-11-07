@@ -50,6 +50,19 @@ export async function claimStudent(
   return data as Student;
 }
 
+export async function updateMyStudentProfile(fullName: string, matricNo: string): Promise<Student> {
+  const { data, error } = await supabase.rpc('update_my_student_profile', {
+    p_full_name: fullName.trim(),
+    p_matric_no: matricNo.trim(),
+  });
+  if (error) {
+    if (/MATRIC_CHANGE_COOLDOWN/i.test(error.message)) throw new Error(error.message);
+    if (/MATRIC_ALREADY_IN_USE/i.test(error.message)) throw new Error('That matric number is already registered in your class.');
+    throw toAppError(error);
+  }
+  return data as Student;
+}
+
 export async function bindStudentPasskey(passkeyId: string, deviceToken: string): Promise<Student> {
   const { data, error } = await supabase.rpc('bind_student_passkey', {
     p_passkey_id: passkeyId,
