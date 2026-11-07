@@ -189,32 +189,50 @@ export async function ensureStudentSession(): Promise<User> {
  */
 export async function createStudentLogin(email: string, password: string): Promise<void> {
   const cleanEmail = email.trim().toLowerCase();
-  if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+  if (!cleanEmail || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(cleanEmail)) {
     throw new AppError('VALIDATION', 'Enter a valid email address.');
   }
   if (password.length < 8) {
     throw new AppError('VALIDATION', 'Your password must contain at least 8 characters.');
   }
 
-  const { data, error } = await supabase.auth.updateUser({ email: cleanEmail, password });
-  if (error) throw toAppError(error);
-  if (!data.user) throw new AppError('AUTH', 'Could not finish setting up your student login.');
+  // Supabase requires an anonymous user's email identity to be confirmed
+  // before a password can be attached. With Confirm Email disabled, Supabase
+  // auto-confirms this email, so the second step can run immediately.
+  const { data: emailData, error: emailError } = await supabase.auth.updateUser({ email: cleanEmail });
+  if (emailError) throw toAppError(emailError);
+  if (!emailData.user) throw new AppError('AUTH', 'Could not save your student email.');
 
-  // Do not tell the student that login setup succeeded unless Supabase has
-  // actually converted the anonymous account and stored the requested email.
-  const savedEmail = data.user.email?.trim().toLowerCase();
-  if (savedEmail !== cleanEmail || data.user.is_anonymous) {
+  const savedEmail = emailData.user.email?.trim().toLowerCase();
+  if (savedEmail !== cleanEmail) {
     throw new AppError(
       'AUTH',
-      savedEmail && savedEmail !== cleanEmail
-        ? `Supabase has not applied the new email yet. Your current login email is ${savedEmail}. Keep using that email until the change is applied.`
-        : 'Your student account is still temporary. Please try saving your email and password again.',
+      savedEmail
+        ? `The new email has not taken effect yet. Your current login email is ${savedEmail}. Keep using that email until the change is applied.`
+        : 'Supabase has not saved your email yet. Please try again.',
     );
+  }
+  if (!emailData.user.email_confirmed_at) {
+    throw new AppError(
+      'AUTH',
+      'Your email is not confirmed yet. Check your email to finish linking it, then return here to set your password.',
+    );
+  }
+
+  const { data: passwordData, error: passwordError } = await supabase.auth.updateUser({ password });
+  if (passwordError) throw toAppError(passwordError);
+  if (!passwordData.user || passwordData.user.is_anonymous) {
+    throw new AppError('AUTH', 'Your student login is not fully permanent yet. Please try saving your password again.');
   }
 
   const { data: verified, error: verifyError } = await supabase.auth.getUser();
   if (verifyError) throw toAppError(verifyError);
-  if (!verified.user || verified.user.id !== data.user.id || verified.user.is_anonymous) {
+  if (
+    !verified.user ||
+    verified.user.id !== passwordData.user.id ||
+    verified.user.is_anonymous ||
+    verified.user.email?.trim().toLowerCase() !== cleanEmail
+  ) {
     throw new AppError('AUTH', 'Your student login could not be verified. Please try saving it again before signing out.');
   }
 }
