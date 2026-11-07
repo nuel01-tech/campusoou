@@ -63,7 +63,8 @@ export interface Student {
   user_id: string | null;
   passkey_id?: string | null;
   device_token?: string | null;
-  claimed_at: string | null;\n  matric_changed_at?: string | null;
+  claimed_at: string | null;
+  matric_changed_at?: string | null;
   is_rep?: boolean;
   suspended: boolean;
   created_at: string;
