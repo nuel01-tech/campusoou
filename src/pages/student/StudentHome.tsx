@@ -2,7 +2,8 @@ import { useCallback } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useAction, useAsync, useNow, usePolling } from '@/hooks/useAsync';
-import { useToast } from '@/hooks/useToast';\nimport { StudentProfileTab } from '@/pages/student/StudentProfileTab';
+import { useToast } from '@/hooks/useToast';
+import { StudentProfileTab } from '@/pages/student/StudentProfileTab';
 import {
   bindStudentPasskey,
   getMyEnrollment,
@@ -24,7 +25,6 @@ import {
   PageHeader,
   PageLoader,
   StatusPill,
-  TextField,
 } from '@/components/ui';
 import { KpiStatGrid, VerticalTabs, type VerticalTabItem } from '@/components/saas';
 import {
