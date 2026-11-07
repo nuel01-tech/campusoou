@@ -13,7 +13,7 @@ set search_path = public, auth
 as $$
 declare
   v_student public.students;
-  v_name text := regexp_replace(trim(coalesce(p_full_name, '')), '\\s+', ' ', 'g');
+  v_name text := regexp_replace(trim(coalesce(p_full_name, '')), '\s+', ' ', 'g');
   v_matric text := public.normalize_matric(p_matric_no);
   v_matric_changed boolean;
 begin
