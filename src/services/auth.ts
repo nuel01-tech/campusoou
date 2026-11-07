@@ -251,22 +251,22 @@ export async function updateStudentCredentials(email: string, password: string):
   }
 
   let currentUserId: string | undefined;
+  let pendingEmailMessage: string | null = null;
+
   if (cleanEmail) {
     const { data, error } = await supabase.auth.updateUser({ email: cleanEmail });
     if (error) throw toAppError(error);
     if (!data.user) throw new AppError('AUTH', 'Could not update your student email.');
     currentUserId = data.user.id;
 
-    // Permanent-user email changes may remain pending until the email link is
-    // completed. Never report success or continue as if the new address works.
+    // Permanent-user email changes can remain pending until the email link is
+    // completed. The password can still be saved, but the new email must not
+    // be presented as usable until Supabase confirms it.
     if (data.user.email?.trim().toLowerCase() !== cleanEmail) {
       const currentEmail = data.user.email?.trim().toLowerCase();
-      throw new AppError(
-        'AUTH',
-        currentEmail
-          ? `The new email has not taken effect yet. Your current login email is ${currentEmail}; keep using it until the email change is completed.`
-          : 'The new email has not taken effect yet. Please complete the email change before signing out.',
-      );
+      pendingEmailMessage = currentEmail
+        ? `The email change is still pending. Your current login email is ${currentEmail}. `
+        : 'The email change is still pending. ';
     }
   }
 
@@ -281,6 +281,13 @@ export async function updateStudentCredentials(email: string, password: string):
   if (verifyError) throw toAppError(verifyError);
   if (!verified.user || (currentUserId && verified.user.id !== currentUserId) || verified.user.is_anonymous) {
     throw new AppError('AUTH', 'Your student login could not be verified. Please sign in again.');
+  }
+
+  if (pendingEmailMessage) {
+    throw new AppError(
+      'AUTH',
+      `${pendingEmailMessage}${password ? 'Your password has been updated. ' : ''}Confirm the email change before signing in with the new address.`,
+    );
   }
 }
 
