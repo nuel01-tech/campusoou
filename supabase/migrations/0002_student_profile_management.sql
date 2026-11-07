@@ -9,7 +9,7 @@ create or replace function public.update_my_student_profile(
 returns public.students
 language plpgsql
 security definer
-set search_path = public, auth
+set search_path = ''
 as $$
 declare
   v_student public.students;
