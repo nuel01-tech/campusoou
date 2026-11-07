@@ -239,37 +239,47 @@ export async function createStudentLogin(email: string, password: string): Promi
 
 /** Update credentials for an already claimed permanent student account. */
 export async function updateStudentCredentials(email: string, password: string): Promise<void> {
-  const updates: { email?: string; password?: string } = {};
-  if (email.trim()) {
-    const cleanEmail = email.trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
-      throw new AppError('VALIDATION', 'Enter a valid email address.');
+  const cleanEmail = email.trim().toLowerCase();
+  if (cleanEmail && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(cleanEmail)) {
+    throw new AppError('VALIDATION', 'Enter a valid email address.');
+  }
+  if (password && password.length < 8) {
+    throw new AppError('VALIDATION', 'Your password must contain at least 8 characters.');
+  }
+  if (!cleanEmail && !password) {
+    throw new AppError('VALIDATION', 'Enter a new email address or password.');
+  }
+
+  let currentUserId: string | undefined;
+  if (cleanEmail) {
+    const { data, error } = await supabase.auth.updateUser({ email: cleanEmail });
+    if (error) throw toAppError(error);
+    if (!data.user) throw new AppError('AUTH', 'Could not update your student email.');
+    currentUserId = data.user.id;
+
+    // Permanent-user email changes may remain pending until the email link is
+    // completed. Never report success or continue as if the new address works.
+    if (data.user.email?.trim().toLowerCase() !== cleanEmail) {
+      const currentEmail = data.user.email?.trim().toLowerCase();
+      throw new AppError(
+        'AUTH',
+        currentEmail
+          ? `The new email has not taken effect yet. Your current login email is ${currentEmail}; keep using it until the email change is completed.`
+          : 'The new email has not taken effect yet. Please complete the email change before signing out.',
+      );
     }
-    updates.email = cleanEmail;
   }
+
   if (password) {
-    if (password.length < 8) throw new AppError('VALIDATION', 'Your password must contain at least 8 characters.');
-    updates.password = password;
-  }
-  if (!Object.keys(updates).length) throw new AppError('VALIDATION', 'Enter a new email address or password.');
-
-  const { data, error } = await supabase.auth.updateUser(updates);
-  if (error) throw toAppError(error);
-  if (!data.user) throw new AppError('AUTH', 'Could not update your student login details.');
-
-  if (updates.email && data.user.email?.trim().toLowerCase() !== updates.email) {
-    const currentEmail = data.user.email?.trim().toLowerCase();
-    throw new AppError(
-      'AUTH',
-      currentEmail
-        ? `The new email has not taken effect yet. Your current login email is ${currentEmail}; keep using it for now.`
-        : 'The new email has not taken effect yet. Please check your account settings before signing out.',
-    );
+    const { data, error } = await supabase.auth.updateUser({ password });
+    if (error) throw toAppError(error);
+    if (!data.user) throw new AppError('AUTH', 'Could not update your student password.');
+    currentUserId = data.user.id;
   }
 
   const { data: verified, error: verifyError } = await supabase.auth.getUser();
   if (verifyError) throw toAppError(verifyError);
-  if (!verified.user || verified.user.id !== data.user.id || verified.user.is_anonymous) {
+  if (!verified.user || (currentUserId && verified.user.id !== currentUserId) || verified.user.is_anonymous) {
     throw new AppError('AUTH', 'Your student login could not be verified. Please sign in again.');
   }
 }
