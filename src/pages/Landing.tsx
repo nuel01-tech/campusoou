@@ -92,6 +92,9 @@ export function Landing() {
           </div>
 
           <div className="hero-actions">
+            <Link to="/student/login" className="btn btn-secondary btn-lg">
+              <span>Student Sign In</span>
+            </Link>
             <Link to="/rep/login" className="btn btn-primary btn-lg">
               <span>Class Rep Sign In</span>
             </Link>

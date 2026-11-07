@@ -82,6 +82,11 @@ export function Shell({ children }: { children: ReactNode }) {
   }, []);
 
   const handleSignOut = async () => {
+    if (role === 'student' && (user?.is_anonymous || !user?.email || !user.email_confirmed_at)) {
+      toast('Create your student email and password login before signing out, so you can access your account again.', 'error');
+      navigate('/me', { replace: true });
+      return;
+    }
     try {
       await signOut();
       navigate('/', { replace: true });
@@ -96,6 +101,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const onPublicOrAuthPage =
     location.pathname === '/' ||
     location.pathname.startsWith('/join') ||
+    location.pathname.startsWith('/student/login') ||
     location.pathname.startsWith('/rep/login') ||
     location.pathname.startsWith('/admin/login') ||
     location.pathname.startsWith('/admin/setup') ||

@@ -183,6 +183,50 @@ export async function ensureStudentSession(): Promise<User> {
   return data.user;
 }
 
+
+/** Upgrade the currently claimed anonymous student session into a permanent email/password account.
+ * Supabase keeps the same auth user ID, so the roster claim, passkey and attendance history stay linked.
+ */
+export async function createStudentLogin(email: string, password: string): Promise<void> {
+  const cleanEmail = email.trim().toLowerCase();
+  if (!cleanEmail || !cleanEmail.includes('@')) {
+    throw new AppError('VALIDATION', 'Enter a valid email address.');
+  }
+  if (password.length < 8) {
+    throw new AppError('VALIDATION', 'Your password must contain at least 8 characters.');
+  }
+  const { data, error } = await supabase.auth.updateUser({ email: cleanEmail, password });
+  if (error) throw toAppError(error);
+  if (!data.user) throw new AppError('AUTH', 'Could not finish setting up your student login.');
+}
+
+/** Student password login; staff accounts are rejected from the student portal. */
+export async function signInStudent(email: string, password: string): Promise<void> {
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: email.trim().toLowerCase(),
+    password,
+  });
+  if (error) throw toAppError(error);
+  if (!data.user) throw new AppError('AUTH', 'Student sign-in failed.');
+  const { data: enrollment, error: enrollmentError } = await supabase
+    .from('students')
+    .select('id')
+    .eq('user_id', data.user.id)
+    .maybeSingle();
+  if (enrollmentError) throw toAppError(enrollmentError);
+  if (!enrollment) {
+    await supabase.auth.signOut().catch(() => {});
+    throw new AppError('AUTH', 'This login is not linked to a claimed student account. Use the Class Rep claim link first.');
+  }
+}
+
+/** Used by AuthProvider to distinguish permanent student accounts from staff accounts. */
+export async function isStudentUser(userId: string): Promise<boolean> {
+  const { data, error } = await supabase.from('students').select('id').eq('user_id', userId).maybeSingle();
+  if (error) throw toAppError(error);
+  return Boolean(data);
+}
+
 export async function signOut(): Promise<void> {
   const { error } = await supabase.auth.signOut();
   if (error) throw toAppError(error);

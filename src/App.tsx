@@ -14,6 +14,7 @@ import { NotFound } from '@/pages/NotFound';
 // Student pages are small and loaded eagerly so the check-in path is fast.
 import { JoinPage } from '@/pages/student/JoinPage';
 import { StudentHome } from '@/pages/student/StudentHome';
+import { StudentLoginPage } from '@/pages/student/StudentLoginPage';
 
 // Staff pages are split out; students never download them.
 const RepAuthPage = lazy(() => import('@/pages/rep/RepAuthPage'));
@@ -41,6 +42,7 @@ export default function App() {
                   <Route path="/join" element={<JoinPage />} />
                   <Route path="/join/:code" element={<JoinPage />} />
                   <Route path="/me" element={<StudentHome />} />
+                  <Route path="/student/login" element={<StudentLoginPage />} />
 
                   <Route path="/rep/login" element={<RepAuthPage />} />
                   <Route path="/rep/signup" element={<Navigate to="/rep/login" replace />} />
