@@ -189,28 +189,71 @@ export async function ensureStudentSession(): Promise<User> {
  */
 export async function createStudentLogin(email: string, password: string): Promise<void> {
   const cleanEmail = email.trim().toLowerCase();
-  if (!cleanEmail || !cleanEmail.includes('@')) {
+  if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
     throw new AppError('VALIDATION', 'Enter a valid email address.');
   }
   if (password.length < 8) {
     throw new AppError('VALIDATION', 'Your password must contain at least 8 characters.');
   }
+
   const { data, error } = await supabase.auth.updateUser({ email: cleanEmail, password });
   if (error) throw toAppError(error);
   if (!data.user) throw new AppError('AUTH', 'Could not finish setting up your student login.');
+
+  // Do not tell the student that login setup succeeded unless Supabase has
+  // actually converted the anonymous account and stored the requested email.
+  const savedEmail = data.user.email?.trim().toLowerCase();
+  if (savedEmail !== cleanEmail || data.user.is_anonymous) {
+    throw new AppError(
+      'AUTH',
+      savedEmail && savedEmail !== cleanEmail
+        ? `Supabase has not applied the new email yet. Your current login email is ${savedEmail}. Keep using that email until the change is applied.`
+        : 'Your student account is still temporary. Please try saving your email and password again.',
+    );
+  }
+
+  const { data: verified, error: verifyError } = await supabase.auth.getUser();
+  if (verifyError) throw toAppError(verifyError);
+  if (!verified.user || verified.user.id !== data.user.id || verified.user.is_anonymous) {
+    throw new AppError('AUTH', 'Your student login could not be verified. Please try saving it again before signing out.');
+  }
 }
 
 /** Update credentials for an already claimed permanent student account. */
 export async function updateStudentCredentials(email: string, password: string): Promise<void> {
   const updates: { email?: string; password?: string } = {};
-  if (email.trim()) updates.email = email.trim().toLowerCase();
+  if (email.trim()) {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      throw new AppError('VALIDATION', 'Enter a valid email address.');
+    }
+    updates.email = cleanEmail;
+  }
   if (password) {
     if (password.length < 8) throw new AppError('VALIDATION', 'Your password must contain at least 8 characters.');
     updates.password = password;
   }
   if (!Object.keys(updates).length) throw new AppError('VALIDATION', 'Enter a new email address or password.');
-  const { error } = await supabase.auth.updateUser(updates);
+
+  const { data, error } = await supabase.auth.updateUser(updates);
   if (error) throw toAppError(error);
+  if (!data.user) throw new AppError('AUTH', 'Could not update your student login details.');
+
+  if (updates.email && data.user.email?.trim().toLowerCase() !== updates.email) {
+    const currentEmail = data.user.email?.trim().toLowerCase();
+    throw new AppError(
+      'AUTH',
+      currentEmail
+        ? `The new email has not taken effect yet. Your current login email is ${currentEmail}; keep using it for now.`
+        : 'The new email has not taken effect yet. Please check your account settings before signing out.',
+    );
+  }
+
+  const { data: verified, error: verifyError } = await supabase.auth.getUser();
+  if (verifyError) throw toAppError(verifyError);
+  if (!verified.user || verified.user.id !== data.user.id || verified.user.is_anonymous) {
+    throw new AppError('AUTH', 'Your student login could not be verified. Please sign in again.');
+  }
 }
 
 /** Student password login; staff accounts are rejected from the student portal. */
@@ -219,7 +262,15 @@ export async function signInStudent(email: string, password: string): Promise<vo
     email: email.trim().toLowerCase(),
     password,
   });
-  if (error) throw toAppError(error);
+  if (error) {
+    if (/invalid login credentials/i.test(error.message)) {
+      throw new AppError(
+        'AUTH',
+        'The email address or password is incorrect. Use the login email shown under My Profile → Login & Account Security. Changing your student name or matric number does not change your login credentials.',
+      );
+    }
+    throw toAppError(error);
+  }
   if (!data.user) throw new AppError('AUTH', 'Student sign-in failed.');
   const { data: enrollment, error: enrollmentError } = await supabase
     .from('students')
