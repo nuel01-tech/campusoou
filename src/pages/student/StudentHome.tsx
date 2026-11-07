@@ -207,7 +207,7 @@ function StudentDashboard() {
         }
       />
 
-      {user?.is_anonymous && <StudentLoginSetup onComplete={refreshAuth} />}
+
 
       {needsInitialPasskeyBind && (
         <div className="panel stack">
