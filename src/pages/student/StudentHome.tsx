@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useState, type FormEvent } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useAction, useAsync, useNow, usePolling } from '@/hooks/useAsync';
@@ -24,6 +24,7 @@ import {
   PageHeader,
   PageLoader,
   StatusPill,
+  TextField,
 } from '@/components/ui';
 import { KpiStatGrid, VerticalTabs, type VerticalTabItem } from '@/components/saas';
 import {
@@ -50,6 +51,7 @@ export function StudentHome() {
 }
 
 function StudentDashboard() {
+  const { user, refreshAuth } = useAuth();
   const me = useAsync(getMyEnrollment, []);
   const incognito = useAsync(detectIncognitoMode, []);
   const localToken = useAsync(getExistingDeviceToken, []);
@@ -198,6 +200,8 @@ function StudentDashboard() {
           </Button>
         }
       />
+
+      {user?.is_anonymous && <StudentLoginSetup onComplete={refreshAuth} />}
 
       {needsInitialPasskeyBind && (
         <div className="panel stack">
@@ -455,5 +459,58 @@ function StudentDashboard() {
         </div>
       </div>
     </div>
+  );
+}
+
+
+function StudentLoginSetup({ onComplete }: { onComplete: () => Promise<void> }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [done, setDone] = useState(false);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setError('');
+    if (password !== confirmPassword) {
+      setError('The passwords do not match.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const { createStudentLogin } = await import('@/services/auth');
+      await createStudentLogin(email, password);
+      await onComplete();
+      setDone(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create your student login.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (done) return null;
+  return (
+    <section className="panel stack">
+      <div>
+        <Badge tone="info">One-time setup</Badge>
+        <h2 style={{ marginTop: '0.5rem' }}>Create your student login</h2>
+        <p className="muted small">
+          Your account is currently tied to this browser session. Add an email and password so you can sign out and log back in later. Your matric number, passkey and attendance history remain attached to the same account.
+        </p>
+      </div>
+      <form onSubmit={submit} className="stack">
+        <TextField label="Email address" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required />
+        <TextField label="Create password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" required hint="At least 8 characters." />
+        <TextField label="Confirm password" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" required />
+        {error && <Alert tone="error" title="Could not create login">{error}</Alert>}
+        <Button type="submit" loading={busy} disabled={!email.trim() || password.length < 8 || !confirmPassword}>
+          Save Student Login
+        </Button>
+      </form>
+      <p className="fine-print">Use an email address you can access. If email confirmation is enabled for this Supabase project, confirm it before signing out.</p>
+    </section>
   );
 }
