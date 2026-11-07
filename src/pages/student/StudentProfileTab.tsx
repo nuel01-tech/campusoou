@@ -148,7 +148,7 @@ export function StudentProfileTab({ student, className, user, onSaved, onAuthUpd
           </p>
         </div>
         {user?.email && <p className="small"><strong>Current login email:</strong> {user.email}</p>}
-        {accountDone && <Alert tone="success" title="Login details saved">If you changed your email address, confirm the new address before signing out.</Alert>}
+        {accountDone && <Alert tone="success" title="Student login is ready">You can now sign out and sign back in with the email address and password you just saved.</Alert>}
         <form className="stack" onSubmit={saveAccount}>
           <TextField
             label={user?.is_anonymous ? 'Email address' : 'New email address (optional)'}
