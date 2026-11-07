@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Session as AuthSession, User } from '@supabase/supabase-js';
-import { getAuthSession, getMyProfile, onAuthChange, signOut, type Role } from '@/services/auth';
+import { getAuthSession, getMyProfile, isStudentUser, onAuthChange, signOut, type Role } from '@/services/auth';
 import type { Profile } from '@/types';
 
 interface AuthState {
@@ -22,13 +22,21 @@ const AuthContext = createContext<AuthState>({
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [studentAccount, setStudentAccount] = useState(false);
   const [ready, setReady] = useState(false);
 
   const syncSession = useCallback(async (s: AuthSession | null) => {
     setSession(s);
     const user = s?.user ?? null;
-    if (!user || user.is_anonymous) {
+    if (!user) {
       setProfile(null);
+      setStudentAccount(false);
+      setReady(true);
+      return;
+    }
+    if (user.is_anonymous) {
+      setProfile(null);
+      setStudentAccount(true);
       setReady(true);
       return;
     }
@@ -38,11 +46,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await signOut().catch(() => {});
         setSession(null);
         setProfile(null);
+        setStudentAccount(false);
       } else {
         setProfile(p);
+        setStudentAccount(!p && await isStudentUser(user.id));
       }
     } catch {
       setProfile(null);
+      setStudentAccount(false);
     } finally {
       setReady(true);
     }
@@ -75,9 +86,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AuthState>(() => {
     const user = session?.user ?? null;
-    const role: Role | null = !user ? null : user.is_anonymous ? 'student' : (profile?.role ?? null);
+    const role: Role | null = !user ? null : user.is_anonymous || studentAccount ? 'student' : (profile?.role ?? null);
     return { ready, user, profile, role, refreshAuth };
-  }, [ready, session, profile, refreshAuth]);
+  }, [ready, session, profile, studentAccount, refreshAuth]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
