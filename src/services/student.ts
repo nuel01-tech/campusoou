@@ -56,8 +56,8 @@ export async function updateMyStudentProfile(fullName: string, matricNo: string)
     p_matric_no: matricNo.trim(),
   });
   if (error) {
-    if (/MATRIC_CHANGE_COOLDOWN/i.test(error.message)) throw appError('VALIDATION', error.message);
-    if (/MATRIC_ALREADY_IN_USE/i.test(error.message)) throw appError('VALIDATION', 'That matric number is already registered in your class.');
+    if (/MATRIC_CHANGE_COOLDOWN/i.test(error.message)) throw new Error(error.message);
+    if (/MATRIC_ALREADY_IN_USE/i.test(error.message)) throw new Error('That matric number is already registered in your class.');
     throw toAppError(error);
   }
   return data as Student;
