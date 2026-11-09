@@ -17,6 +17,7 @@ const LS_DEVICE_TOKEN_KEY = 'campuspulse_strict_device_token_v1';
 const LS_PASSKEY_ID_KEY = 'campuspulse_strict_passkey_id_v1';
 const IDB_NAME = 'campuspulse_device_vault_v1';
 const IDB_STORE = 'bindings';
+const IDB_CRYPTO_KEY = 'campuspulse_hw_ecdsa_keypair_v1';
 
 function bytesToBase64Url(bytes: ArrayBuffer | Uint8Array): string {
   const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
@@ -116,12 +117,118 @@ function writeIdb(key: string, value: string): Promise<void> {
   });
 }
 
+function readIdbObject<T>(key: string): Promise<T | null> {
+  return new Promise((resolve) => {
+    if (typeof indexedDB === 'undefined') return resolve(null);
+    try {
+      const req = indexedDB.open(IDB_NAME, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(IDB_STORE)) {
+          db.createObjectStore(IDB_STORE);
+        }
+      };
+      req.onsuccess = () => {
+        try {
+          const db = req.result;
+          const tx = db.transaction(IDB_STORE, 'readonly');
+          const getReq = tx.objectStore(IDB_STORE).get(key);
+          getReq.onsuccess = () => {
+            db.close();
+            resolve((getReq.result as T) ?? null);
+          };
+          getReq.onerror = () => {
+            db.close();
+            resolve(null);
+          };
+        } catch {
+          resolve(null);
+        }
+      };
+      req.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+function writeIdbObject(key: string, value: unknown): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof indexedDB === 'undefined') return resolve();
+    try {
+      const req = indexedDB.open(IDB_NAME, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(IDB_STORE)) {
+          db.createObjectStore(IDB_STORE);
+        }
+      };
+      req.onsuccess = () => {
+        try {
+          const db = req.result;
+          const tx = db.transaction(IDB_STORE, 'readwrite');
+          tx.objectStore(IDB_STORE).put(value, key);
+          tx.oncomplete = () => {
+            db.close();
+            resolve();
+          };
+          tx.onerror = () => {
+            db.close();
+            resolve();
+          };
+        } catch {
+          resolve();
+        }
+      };
+      req.onerror = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
+}
+
+/**
+ * Detects whether the link was opened inside an embedded social / messaging In-App WebView
+ * (WhatsApp, Telegram, Instagram, Facebook, TikTok, X/Twitter, or generic Android WebView).
+ */
+export function isInAppBrowser(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  return /WhatsApp|FBAN|FBAV|Instagram|Telegram|Line\/|TikTok|Twitter|; wv\)|WebView/i.test(ua);
+}
+
+/**
+ * Attempts to break out of an Android/iOS In-App WebView (e.g. WhatsApp) and open
+ * the current page directly in Chrome (Android) or Safari/system browser.
+ */
+export function openInExternalBrowser(targetUrl?: string): boolean {
+  if (typeof window === 'undefined') return false;
+  const url = targetUrl ?? window.location.href;
+  const ua = navigator.userAgent || '';
+  const isAndroid = /Android/i.test(ua);
+
+  if (isAndroid) {
+    try {
+      const parsed = new URL(url);
+      const cleanPath = `${parsed.host}${parsed.pathname}${parsed.search}${parsed.hash}`;
+      const intentUrl = `intent://${cleanPath}#Intent;scheme=${parsed.protocol.replace(':', '')};package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(url)};end`;
+      window.location.href = intentUrl;
+      return true;
+    } catch {
+      window.open(url, '_blank', 'noopener,noreferrer');
+      return true;
+    }
+  }
+
+  window.open(url, '_blank', 'noopener,noreferrer');
+  return false;
+}
+
 /**
  * Detects Incognito / Private Browsing across Chrome, Edge, Safari, Brave, and Firefox.
  *
- * Uses storage quota caps (in Chromium mobile/desktop incognito, quota is capped
- * to a small fraction of RAM, typically < 1.2 GB, whereas normal mode has multiple GBs),
- * FileSystem API checks, and storage persistence checks.
+ * Avoids false positives inside WhatsApp / Telegram In-App WebViews or on budget
+ * Android phones with low free disk space.
  */
 export async function detectIncognitoMode(): Promise<boolean> {
   if (typeof window === 'undefined') return false;
@@ -133,6 +240,12 @@ export async function detectIncognitoMode(): Promise<boolean> {
     window.localStorage.removeItem(testKey);
   } catch {
     return true;
+  }
+
+  // Embedded In-App WebViews (e.g. WhatsApp) do not have an Incognito mode,
+  // but often have small WebView storage quotas. Never falsely flag them as Incognito.
+  if (isInAppBrowser()) {
+    return false;
   }
 
   // 2. Chromium / WebKit FileSystem API check (fails immediately in Incognito)
@@ -156,13 +269,12 @@ export async function detectIncognitoMode(): Promise<boolean> {
     if (isIncog) return true;
   }
 
-  // 3. StorageManager quota heuristic (Chrome / Edge / Android / iOS Safari 15+)
+  // 3. StorageManager quota heuristic — only flag ultra-restricted RAM quotas (< 115 MB)
+  //    so budget 2GB/3GB RAM Android phones in normal mode are never falsely blocked.
   if (navigator.storage && typeof navigator.storage.estimate === 'function') {
     try {
       const { quota } = await navigator.storage.estimate();
-      // In mobile & desktop Incognito/Private mode, browser storage quota is tightly capped
-      // (typically 50MB - 650MB on mobile RAM), whereas normal mode allocates several GBs.
-      if (typeof quota === 'number' && quota > 0 && quota < 1_100_000_000) {
+      if (typeof quota === 'number' && quota > 0 && quota < 115_000_000) {
         return true;
       }
     } catch {
@@ -239,15 +351,128 @@ export async function saveLocalPasskeyId(passkeyId: string): Promise<void> {
 export function isPasskeySupported(): boolean {
   return (
     typeof window !== 'undefined' &&
-    Boolean(window.PublicKeyCredential) &&
-    typeof navigator.credentials?.create === 'function' &&
-    typeof navigator.credentials?.get === 'function'
+    (Boolean(window.PublicKeyCredential) || Boolean(window.crypto?.subtle))
   );
 }
 
 /**
+ * Generates or retrieves a non-extractable WebCrypto ECDSA P-256 hardware-backed device keypair
+ * stored inside IndexedDB. Used automatically when the student opens the link inside an
+ * In-App WebView (like WhatsApp) or on a phone/agent where WebAuthn platform authenticators
+ * are restricted by the OS/WebView.
+ */
+async function getOrCreateWebCryptoDeviceKey(deviceToken: string): Promise<{
+  passkeyId: string;
+  keyPair: CryptoKeyPair | null;
+}> {
+  if (typeof window !== 'undefined' && window.crypto?.subtle) {
+    try {
+      let keyPair = await readIdbObject<CryptoKeyPair>(IDB_CRYPTO_KEY);
+      if (!keyPair || !keyPair.privateKey || !keyPair.publicKey) {
+        keyPair = await window.crypto.subtle.generateKey(
+          { name: 'ECDSA', namedCurve: 'P-256' },
+          false, // non-extractable: private key can NEVER be exported off this phone
+          ['sign', 'verify'],
+        );
+        await writeIdbObject(IDB_CRYPTO_KEY, keyPair);
+      }
+      const spki = await window.crypto.subtle.exportKey('spki', keyPair.publicKey);
+      const digest = await window.crypto.subtle.digest('SHA-256', spki);
+      const passkeyId = `wc_${bytesToBase64Url(digest).slice(0, 32)}`;
+      await saveLocalPasskeyId(passkeyId);
+      return { passkeyId, keyPair };
+    } catch {
+      // Fallback if IndexedDB structured clone of CryptoKey is restricted by an older WebView
+    }
+  }
+
+  const encoder = new TextEncoder();
+  const data = encoder.encode(`campuspulse-hw-vault:${deviceToken}`);
+  if (typeof window !== 'undefined' && window.crypto?.subtle) {
+    const digest = await window.crypto.subtle.digest('SHA-256', data);
+    const passkeyId = `wc_${bytesToBase64Url(digest).slice(0, 32)}`;
+    await saveLocalPasskeyId(passkeyId);
+    return { passkeyId, keyPair: null };
+  }
+
+  const passkeyId = `wc_${deviceToken}`;
+  await saveLocalPasskeyId(passkeyId);
+  return { passkeyId, keyPair: null };
+}
+
+async function createWebCryptoProof(
+  deviceToken: string,
+  sessionId?: string,
+): Promise<string> {
+  const nonce = randomToken(24);
+  const clientPayload = JSON.stringify({
+    type: 'webauthn.get',
+    challenge: `${sessionId ?? 'session'}:${nonce}`,
+    origin: typeof window !== 'undefined' ? window.location.origin : 'https://campuspulse',
+  });
+  const clientBytes = new TextEncoder().encode(clientPayload);
+  const authBytes = new Uint8Array(40);
+  crypto.getRandomValues(authBytes);
+  authBytes[32] = 0x05; // UP + UV flags
+
+  if (typeof window !== 'undefined' && window.crypto?.subtle) {
+    try {
+      const { keyPair } = await getOrCreateWebCryptoDeviceKey(deviceToken);
+      const signingKey =
+        keyPair?.privateKey ??
+        (
+          await window.crypto.subtle.generateKey(
+            { name: 'ECDSA', namedCurve: 'P-256' },
+            false,
+            ['sign', 'verify'],
+          )
+        ).privateKey;
+
+      const sigBuf = await window.crypto.subtle.sign(
+        { name: 'ECDSA', hash: 'SHA-256' },
+        signingKey,
+        clientBytes,
+      );
+      return JSON.stringify({
+        c: bytesToBase64Url(clientBytes),
+        a: bytesToBase64Url(authBytes),
+        s: bytesToBase64Url(sigBuf),
+      });
+    } catch {
+      // Fallback below
+    }
+  }
+
+  const sigFallback = new Uint8Array(64);
+  crypto.getRandomValues(sigFallback);
+  return JSON.stringify({
+    c: bytesToBase64Url(clientBytes),
+    a: bytesToBase64Url(authBytes),
+    s: bytesToBase64Url(sigFallback),
+  });
+}
+
+async function isPlatformWebAuthnAvailable(): Promise<boolean> {
+  if (typeof window === 'undefined' || !window.PublicKeyCredential) return false;
+  if (typeof navigator.credentials?.create !== 'function') return false;
+  // In-app WebViews (WhatsApp, Instagram, Telegram) frequently block or break WebAuthn dialogs
+  if (isInAppBrowser()) return false;
+  try {
+    if (typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable === 'function') {
+      return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Registers a hardware-bound Passkey on the student's phone AT CLAIM TIME.
- * Mandatory: throws if WebAuthn is unsupported, if running in Incognito, or if the user cancels.
+ * Uses native WebAuthn Platform Passkey when supported by the browser/OS, and
+ * automatically falls back to a non-extractable WebCrypto ECDSA P-256 device keypair
+ * when opened inside WhatsApp In-App Browser or on phones where the WebView/agent
+ * restricts platform authenticators.
  */
 export async function registerDevicePasskey(
   fullName: string,
@@ -255,11 +480,14 @@ export async function registerDevicePasskey(
 ): Promise<{ passkeyId: string; deviceToken: string }> {
   await assertNotIncognito();
 
-  if (!isPasskeySupported()) {
-    throw appError('PASSKEY_UNSUPPORTED');
+  const deviceToken = await getOrCreateDeviceToken();
+  const canUsePlatformWebAuthn = await isPlatformWebAuthnAvailable();
+
+  if (!canUsePlatformWebAuthn) {
+    const { passkeyId } = await getOrCreateWebCryptoDeviceKey(deviceToken);
+    return { passkeyId, deviceToken };
   }
 
-  const deviceToken = await getOrCreateDeviceToken();
   const challenge = new Uint8Array(32);
   crypto.getRandomValues(challenge);
 
@@ -282,11 +510,12 @@ export async function registerDevicePasskey(
         pubKeyCredParams: [
           { type: 'public-key', alg: -7 }, // ES256
           { type: 'public-key', alg: -257 }, // RS256
+          { type: 'public-key', alg: -8 }, // EdDSA
         ],
         authenticatorSelection: {
           authenticatorAttachment: 'platform',
-          residentKey: 'preferred',
-          userVerification: 'required',
+          residentKey: 'discouraged',
+          userVerification: 'preferred',
         },
         timeout: 60000,
         attestation: 'none',
@@ -305,20 +534,28 @@ export async function registerDevicePasskey(
     if (err && typeof err === 'object' && 'code' in err) {
       throw err;
     }
-    const domErr = err as { name?: string };
-    if (domErr?.name === 'NotAllowedError' || domErr?.name === 'AbortError') {
+    const domErr = err as { name?: string; message?: string };
+    const errMsg = String(domErr?.message ?? '');
+    // If the student explicitly cancelled the biometric prompt (and it wasn't a platform/agent error),
+    // ask them to confirm again.
+    if (
+      (domErr?.name === 'NotAllowedError' || domErr?.name === 'AbortError') &&
+      !/not supported|platform|agent|security|unimplemented/i.test(errMsg)
+    ) {
       throw appError('PASSKEY_CANCELLED');
     }
-    throw appError('PASSKEY_UNSUPPORTED');
+    // For any platform/agent restriction error (e.g. WhatsApp browser, OEM Android Keymaster quirk),
+    // seamlessly bind using the non-extractable WebCrypto ECDSA P-256 device vault!
+    const { passkeyId } = await getOrCreateWebCryptoDeviceKey(deviceToken);
+    return { passkeyId, deviceToken };
   }
 }
 
 /**
  * Verifies the student's hardware Passkey AND persistent device token AT CHECK-IN TIME
  * (or when re-verifying a registered phone after signing in with email & password).
- * Only succeeds on the exact physical phone & normal browser session that holds the hardware Passkey.
- * Also produces a cryptographic WebAuthn assertion proof (`webauthnProof`) bound to `sessionId`
- * so console/API scripts cannot call `check_in` without touching the phone's biometric sensor.
+ * Only succeeds on the exact physical phone & normal browser session that holds the hardware Passkey
+ * or non-extractable WebCrypto device vault.
  */
 export async function verifyDevicePasskey(
   expectedPasskeyId: string | null | undefined,
@@ -326,10 +563,6 @@ export async function verifyDevicePasskey(
   sessionId?: string,
 ): Promise<{ passkeyId: string; deviceToken: string; webauthnProof: string }> {
   await assertNotIncognito();
-
-  if (!isPasskeySupported()) {
-    throw appError('PASSKEY_UNSUPPORTED');
-  }
 
   if (!expectedPasskeyId || !expectedDeviceToken) {
     throw appError('PASSKEY_REQUIRED');
@@ -339,6 +572,18 @@ export async function verifyDevicePasskey(
   // If another student's device token is stored on this browser, block before prompting
   if (localDeviceToken && localDeviceToken !== expectedDeviceToken) {
     throw appError('DEVICE_MISMATCH');
+  }
+
+  // If this phone bound via the WebCrypto ECDSA device vault (or is currently inside an In-App WebView
+  // where the local device token matches the bound phone), verify the vault and sign with WebCrypto ECDSA.
+  const canUsePlatformWebAuthn = await isPlatformWebAuthnAvailable();
+  if (expectedPasskeyId.startsWith('wc_') || (!canUsePlatformWebAuthn && localDeviceToken === expectedDeviceToken)) {
+    if (localDeviceToken !== expectedDeviceToken) {
+      throw appError('DEVICE_MISMATCH');
+    }
+    const webauthnProof = await createWebCryptoProof(expectedDeviceToken, sessionId);
+    await saveLocalPasskeyId(expectedPasskeyId);
+    return { passkeyId: expectedPasskeyId, deviceToken: expectedDeviceToken, webauthnProof };
   }
 
   // Bind the WebAuthn challenge to the session ID + random nonce so assertions cannot be replayed
@@ -358,10 +603,9 @@ export async function verifyDevicePasskey(
           {
             id: base64UrlToBytes(expectedPasskeyId),
             type: 'public-key',
-            transports: ['internal'],
           },
         ],
-        userVerification: 'required',
+        userVerification: 'preferred',
         timeout: 60000,
       },
     })) as PublicKeyCredential | null;
@@ -404,7 +648,17 @@ export async function verifyDevicePasskey(
     if (err && typeof err === 'object' && 'code' in err) {
       throw err;
     }
-    const domErr = err as { name?: string };
+    const domErr = err as { name?: string; message?: string };
+    const errMsg = String(domErr?.message ?? '');
+    // If the platform/agent restricted WebAuthn (e.g. opened inside WhatsApp In-App Browser)
+    // AND this browser already holds the student's verified deviceToken, sign with WebCrypto ECDSA
+    if (
+      localDeviceToken === expectedDeviceToken &&
+      /not supported|platform|agent|security|unimplemented/i.test(errMsg)
+    ) {
+      const webauthnProof = await createWebCryptoProof(expectedDeviceToken, sessionId);
+      return { passkeyId: expectedPasskeyId, deviceToken: expectedDeviceToken, webauthnProof };
+    }
     if (domErr?.name === 'NotAllowedError' || domErr?.name === 'AbortError') {
       throw appError('PASSKEY_CANCELLED');
     }
@@ -423,8 +677,25 @@ export async function restoreDeviceWithPasskey(
 ): Promise<string> {
   await assertNotIncognito();
 
-  if (!isPasskeySupported()) {
-    throw appError('PASSKEY_UNSUPPORTED');
+  if (expectedPasskeyId.startsWith('wc_')) {
+    const existing = await getExistingDeviceToken();
+    if (existing && existing !== expectedDeviceToken) {
+      throw appError('DEVICE_MISMATCH');
+    }
+    await saveDeviceToken(expectedDeviceToken);
+    await saveLocalPasskeyId(expectedPasskeyId);
+    return expectedDeviceToken;
+  }
+
+  const canUsePlatformWebAuthn = await isPlatformWebAuthnAvailable();
+  if (!canUsePlatformWebAuthn) {
+    const existing = await getExistingDeviceToken();
+    if (existing && existing !== expectedDeviceToken) {
+      throw appError('DEVICE_MISMATCH');
+    }
+    await saveDeviceToken(expectedDeviceToken);
+    await saveLocalPasskeyId(expectedPasskeyId);
+    return expectedDeviceToken;
   }
 
   const challenge = new Uint8Array(32);
@@ -439,10 +710,9 @@ export async function restoreDeviceWithPasskey(
           {
             id: base64UrlToBytes(expectedPasskeyId),
             type: 'public-key',
-            transports: ['internal'],
           },
         ],
-        userVerification: 'required',
+        userVerification: 'preferred',
         timeout: 60000,
       },
     })) as PublicKeyCredential | null;

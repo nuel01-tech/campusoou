@@ -14,6 +14,8 @@ import {
 import {
   detectIncognitoMode,
   getExistingDeviceToken,
+  isInAppBrowser,
+  openInExternalBrowser,
   registerDevicePasskey,
   restoreDeviceWithPasskey,
 } from '@/lib/webauthn';
@@ -30,6 +32,7 @@ import {
 } from '@/components/ui';
 import { KpiStatGrid, VerticalTabs, type VerticalTabItem } from '@/components/saas';
 import {
+  ArrowUpRightIcon,
   CalendarDaysIcon,
   ClipboardCheckIcon,
   GraduationCapIcon,
@@ -223,6 +226,21 @@ function StudentDashboard() {
           </Button>
         }
       />
+
+      {isInAppBrowser() && (
+        <Alert
+          tone="info"
+          title="Opened inside WhatsApp / In-App Browser"
+          action={
+            <Button size="sm" variant="secondary" onClick={() => openInExternalBrowser()}>
+              <span>Open in Chrome / Browser</span>
+              <ArrowUpRightIcon size={13} />
+            </Button>
+          }
+        >
+          Check-in works right here in WhatsApp, or tap <strong>Open in Chrome / Browser</strong> to launch your main mobile browser.
+        </Alert>
+      )}
 
       {!hasPermanentLogin && activeTab !== 'profile' && (
         <Alert

@@ -5,9 +5,15 @@ import { useAction, useAsync } from '@/hooks/useAsync';
 import { useToast } from '@/hooks/useToast';
 import { ensureStudentSession } from '@/services/auth';
 import { claimStudent, findClassByCode, getMyEnrollment } from '@/services/student';
-import { detectIncognitoMode, isPasskeySupported, registerDevicePasskey } from '@/lib/webauthn';
+import {
+  detectIncognitoMode,
+  isInAppBrowser,
+  isPasskeySupported,
+  openInExternalBrowser,
+  registerDevicePasskey,
+} from '@/lib/webauthn';
 import { Alert, Badge, Button, ErrorAlert, PageHeader, PageLoader, TextField } from '@/components/ui';
-import { KeyRoundIcon, ShieldCheckIcon, SmartphoneIcon } from '@/components/icons';
+import { ArrowUpRightIcon, KeyRoundIcon, ShieldCheckIcon, SmartphoneIcon } from '@/components/icons';
 import { titleCase } from '@/lib/names';
 
 export function JoinPage() {
@@ -130,6 +136,26 @@ function ClaimForm({ code }: { code: string }) {
           Hardware Passkey Required
         </Badge>
       </div>
+
+      {isInAppBrowser() && (
+        <Alert
+          tone="info"
+          title="Opened from WhatsApp / In-App Browser"
+          action={
+            <Button
+              size="sm"
+              variant="secondary"
+              type="button"
+              onClick={() => openInExternalBrowser()}
+            >
+              <span>Open in Chrome / Browser</span>
+              <ArrowUpRightIcon size={13} />
+            </Button>
+          }
+        >
+          You can claim your account right here, or tap <strong>Open in Chrome / Browser</strong> so your phone stays signed in inside your main browser for every lecture.
+        </Alert>
+      )}
 
       {role === 'rep' || role === 'super_admin' ? (
         <Alert tone="warning" title="You're signed in as staff">
