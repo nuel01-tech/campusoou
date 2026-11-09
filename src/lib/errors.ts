@@ -102,6 +102,8 @@ const MESSAGES: Record<string, string | MessageFor> = {
   GEO_INSECURE: 'Location only works on a secure (https) link.',
 
   // General
+  RATE_LIMITED:
+    'Too many requests detected from your connection (Anti-DDoS & Brute-Force Protection). Please wait 60 seconds before trying again.',
   NOT_AUTHENTICATED: 'Your session has expired. Please sign in again.',
   NETWORK: 'No connection to Supabase. Check your internet and verify VITE_SUPABASE_URL is correct.',
   DUPLICATE: 'That record already exists.',

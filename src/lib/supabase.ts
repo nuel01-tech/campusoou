@@ -43,6 +43,8 @@ function readInitialConfig(): { url: string; anonKey: string; configured: boolea
     env.SUPABASE_ANON_KEY;
 
   if (isValidConfig(envUrl, envKey)) {
+    // Clean up any legacy keys left in localStorage so keys stay in memory only
+    clearSavedConfig();
     return { url: envUrl!.trim(), anonKey: envKey!.trim(), configured: true };
   }
 
@@ -77,17 +79,21 @@ export let supabase: SupabaseClient = createClient(activeUrl, activeKey, {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
 });
 
-/** Saves credentials to localStorage and re-initializes the Supabase client. */
-export function saveRuntimeConfig(url: string, anonKey: string): boolean {
+/** Saves credentials in memory (and optionally localStorage for manual setup) and re-initializes the Supabase client. */
+export function saveRuntimeConfig(url: string, anonKey: string, persistToStorage = true): boolean {
   const cleanUrl = url.trim();
   const cleanKey = anonKey.trim();
   if (!isValidConfig(cleanUrl, cleanKey)) return false;
 
-  try {
-    window.localStorage.setItem(STORAGE_URL_KEY, cleanUrl);
-    window.localStorage.setItem(STORAGE_ANON_KEY, cleanKey);
-  } catch {
-    // ignore storage errors
+  if (persistToStorage) {
+    try {
+      window.localStorage.setItem(STORAGE_URL_KEY, cleanUrl);
+      window.localStorage.setItem(STORAGE_ANON_KEY, cleanKey);
+    } catch {
+      // ignore storage errors
+    }
+  } else {
+    clearSavedConfig();
   }
 
   activeUrl = cleanUrl;
@@ -99,7 +105,7 @@ export function saveRuntimeConfig(url: string, anonKey: string): boolean {
   return true;
 }
 
-/** Attempts to fetch runtime config from `/api/config` (e.g. on Vercel). */
+/** Attempts to fetch runtime config from `/api/config` (e.g. on Vercel) into memory only. */
 export async function tryLoadServerConfig(): Promise<boolean> {
   if (isConfigured) return true;
   try {
@@ -107,7 +113,7 @@ export async function tryLoadServerConfig(): Promise<boolean> {
     if (!res.ok) return false;
     const data = (await res.json()) as { url?: string; anonKey?: string };
     if (isValidConfig(data.url, data.anonKey)) {
-      return saveRuntimeConfig(data.url!, data.anonKey!);
+      return saveRuntimeConfig(data.url!, data.anonKey!, false);
     }
   } catch {
     // /api/config not available in local vite dev server

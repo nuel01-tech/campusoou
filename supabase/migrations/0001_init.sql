@@ -1133,12 +1133,72 @@ $$;
 create or replace function public.ping()
 returns text
 language sql
-stable
+immutable
 security definer
 set search_path = public
 as $$
-  select 'ok'::text from (select count(*) from public.profiles) _;
+  select 'ok'::text;
 $$;
+
+-- -----------------------------------------------------------------------------
+-- Anti-DDoS & Brute-Force Rate Limiter (Server-Side Token Bucket)
+-- -----------------------------------------------------------------------------
+
+create unlogged table if not exists public.rate_limit_buckets (
+  bucket_key text primary key,
+  hits       int not null default 1,
+  reset_at   timestamptz not null
+);
+alter table public.rate_limit_buckets enable row level security;
+
+create or replace function public.enforce_rate_limit(
+  p_action     text,
+  p_max_hits   int,
+  p_window_sec int default 60
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_actor text;
+  v_ip    text := '';
+  v_key   text;
+  v_hits  int;
+begin
+  begin
+    v_ip := trim(split_part(coalesce(current_setting('request.headers', true)::jsonb ->> 'x-forwarded-for', ''), ',', 1));
+  exception when others then
+    v_ip := '';
+  end;
+
+  v_actor := coalesce(auth.uid()::text, nullif(v_ip, ''), 'anon');
+  v_key := p_action || ':' || v_actor;
+
+  if random() < 0.01 then
+    delete from public.rate_limit_buckets where reset_at < now();
+  end if;
+
+  insert into public.rate_limit_buckets (bucket_key, hits, reset_at)
+  values (v_key, 1, now() + make_interval(secs => p_window_sec))
+  on conflict (bucket_key) do update
+    set hits = case
+                 when public.rate_limit_buckets.reset_at <= now() then 1
+                 else public.rate_limit_buckets.hits + 1
+               end,
+        reset_at = case
+                     when public.rate_limit_buckets.reset_at <= now() then now() + make_interval(secs => p_window_sec)
+                     else public.rate_limit_buckets.reset_at
+                   end
+  returning hits into v_hits;
+
+  if v_hits > p_max_hits then
+    raise exception 'RATE_LIMITED';
+  end if;
+end;
+$$;
+revoke all on function public.enforce_rate_limit(text, int, int) from public, anon, authenticated;
 
 -- -----------------------------------------------------------------------------
 -- RPC: public class lookup for the join page
@@ -1182,6 +1242,8 @@ begin
   if v_uid is null then
     raise exception 'NOT_AUTHENTICATED';
   end if;
+
+  perform public.enforce_rate_limit('claim_student', 6, 60);
 
   if v_passkey = '' or v_device = '' then
     raise exception 'PASSKEY_REQUIRED';
@@ -1267,6 +1329,8 @@ begin
   if v_uid is null then
     raise exception 'NOT_AUTHENTICATED';
   end if;
+
+  perform public.enforce_rate_limit('claim_student', 6, 60);
 
   if v_passkey = '' or v_device = '' then
     raise exception 'PASSKEY_REQUIRED';
@@ -1393,6 +1457,8 @@ begin
   if v_uid is null then
     raise exception 'NOT_AUTHENTICATED';
   end if;
+
+  perform public.enforce_rate_limit('check_in', 8, 60);
 
   if p_lat is null or p_lng is null or p_lat not between -90 and 90 or p_lng not between -180 and 180 then
     raise exception 'INVALID_LOCATION';
