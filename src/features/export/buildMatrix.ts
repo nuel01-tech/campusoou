@@ -4,7 +4,8 @@
   * A week with one session shows "P" or "A". When a course meets more than
   * once in a week the cell shows attended/held, e.g. "1/2".
   * When `options.allSemesterWeeks` is true, all 15 semester weeks (Week 1 – Week 15)
-  * are included as columns; weeks without sessions show "—" and do not inflate `Held`.
+  * are included as columns; weeks without sessions (unmarked past weeks or upcoming weeks)
+  * remain blank (`""`) so printed/exported sheets have clean empty cells, and do not inflate `Held`.
   */
 import { SEMESTER_WEEKS } from '@/lib/week';
 import type { Attendance, Session, Student } from '@/types';
@@ -59,7 +60,7 @@ export function buildMatrix(
     let total = 0;
     const cells = weeks.map((w) => {
       const held = sessionsPerWeek.get(w) ?? 0;
-      if (held === 0) return '—';
+      if (held === 0) return '';
       const got = Math.min(byWeek?.get(w) ?? 0, held);
       total += got;
       if (held === 1) return got ? 'P' : 'A';

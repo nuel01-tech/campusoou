@@ -4,7 +4,7 @@ import { useAction, useAsync } from '@/hooks/useAsync';
 import { listStudents } from '@/services/roster';
 import { listAttendanceFor, listSessions } from '@/services/sessions';
 import { Badge, Button, ErrorAlert, PageLoader, SelectField } from '@/components/ui';
-import { CheckCircle2Icon, DownloadIcon, FileSpreadsheetIcon, PlusIcon } from '@/components/icons';
+import { CheckCircle2Icon, DownloadIcon, FileSpreadsheetIcon, PlusIcon, PrinterIcon } from '@/components/icons';
 import { buildMatrix } from './buildMatrix';
 import { downloadMatrix, type ExportFormat } from './downloadMatrix';
 import type { ClassRoom } from '@/types';
@@ -107,7 +107,7 @@ export function ExportTab({ klass }: { klass: ClassRoom }) {
           </div>
         </div>
 
-        <div className="row" style={{ flexWrap: 'wrap', gap: '0.5rem' }}>
+        <div className="row no-print" style={{ flexWrap: 'wrap', gap: '0.5rem' }}>
           <Button
             onClick={() => download.run('xlsx')}
             disabled={!matrix || attendance.loading}
@@ -124,13 +124,32 @@ export function ExportTab({ klass }: { klass: ClassRoom }) {
             <DownloadIcon size={15} />
             <span>Download CSV</span>
           </Button>
+          <Button
+            variant="secondary"
+            onClick={() => window.print()}
+            disabled={!matrix || attendance.loading}
+          >
+            <PrinterIcon size={15} />
+            <span>Print Attendance Sheet</span>
+          </Button>
         </div>
       </div>
 
-      <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+      <div className="print-sheet-header">
+        <h2>Olabisi Onabanjo University — 15-Week Semester Attendance Register</h2>
+        <p>
+          <strong>Class:</strong> {klass.name}
+          {klass.department_name ? ` · ${klass.department_name}` : ''}
+          {klass.level ? ` (${klass.level})` : ''} ·{' '}
+          <strong>Course:</strong> {course === ALL ? 'All Courses' : course} ·{' '}
+          <strong>Recorded Weeks:</strong> {matrix ? matrix.heldWeeks.size : 0} of 15
+        </p>
+      </div>
+
+      <div className="row no-print" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
         <p className="muted small">
-          <strong>P</strong> = present, <strong>A</strong> = absent, <strong>—</strong> = no session held yet in that week.
-          Click <strong>+ Mark</strong> under any omitted week column to manually record attendance for that past week.
+          <strong>P</strong> = present, <strong>A</strong> = absent, <strong>Blank</strong> = past/upcoming week not marked yet.
+          Click <strong>+ Mark</strong> under any unmarked week column to manually record attendance, or print/export with unmarked weeks left blank.
         </p>
         {matrix && (
           <Badge tone="ok">
@@ -173,12 +192,12 @@ export function ExportTab({ klass }: { klass: ClassRoom }) {
                         <div className="week-th-inner">
                           <span className="row" style={{ gap: '0.25rem', justifyContent: 'flex-end' }}>
                             <span>W{weekNum}</span>
-                            {isHeld && <CheckCircle2Icon size={11} />}
+                            {isHeld && <CheckCircle2Icon size={11} className="no-print" />}
                           </span>
                           {isHeld && weekSessions.length === 1 ? (
                             <Link
                               to={`/rep/session/${weekSessions[0]!.id}?manual=1`}
-                              className="week-th-link is-held"
+                              className="week-th-link is-held no-print"
                               title={`Open & edit Week ${weekNum} attendance`}
                             >
                               Edit
@@ -186,7 +205,7 @@ export function ExportTab({ klass }: { klass: ClassRoom }) {
                           ) : !isHeld ? (
                             <Link
                               to={`/rep/class/${klass.id}/new-session?week=${weekNum}&mode=backfill${courseParam}`}
-                              className="week-th-link is-omitted"
+                              className="week-th-link is-omitted no-print"
                               title={`Manually mark omitted Week ${weekNum}`}
                             >
                               <PlusIcon size={10} />
@@ -214,7 +233,7 @@ export function ExportTab({ klass }: { klass: ClassRoom }) {
                         i > 2 && 'num',
                         cell === 'A' && 'cell-absent',
                         cell === 'P' && 'cell-present',
-                        cell === '—' && 'muted',
+                        cell === '' && 'cell-blank',
                       ]
                         .filter(Boolean)
                         .join(' ')}

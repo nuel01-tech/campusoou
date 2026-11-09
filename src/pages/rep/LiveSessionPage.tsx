@@ -313,13 +313,15 @@ export default function LiveSessionPage() {
               {session.week > 15 && <option value={session.week}>Week {session.week}</option>}
             </select>
           </label>
-          <Button size="sm" variant="ghost" onClick={() => setOverrideActive((v) => !v)}>
-            {overrideActive ? 'Hide manual controls' : 'Manual marking'}
-          </Button>
+          {(overrideActive || !live) && (
+            <Button size="sm" variant="ghost" onClick={() => setOverrideActive((v) => !v)}>
+              {overrideActive ? 'Lock list' : 'Edit roll'}
+            </Button>
+          )}
           {live ? (
             <Badge tone="live">Open · {timeLeft(session.ends_at, now)}</Badge>
           ) : (
-            <Badge tone="muted">Closed / Manual Marking Ready</Badge>
+            <Badge tone="muted">Closed</Badge>
           )}
         </div>
       </section>
