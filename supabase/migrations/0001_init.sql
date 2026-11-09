@@ -1486,16 +1486,6 @@ begin
     raise exception 'DEVICE_MISMATCH';
   end if;
 
-  -- Verify 4-Digit Hall Security PIN if enabled by Class Rep
-  if v_session.security_code is not null and trim(v_session.security_code) <> '' then
-    if v_pin_input = '' then
-      raise exception 'SECURITY_CODE_REQUIRED';
-    end if;
-    if v_pin_input <> trim(v_session.security_code) then
-      raise exception 'INVALID_SECURITY_CODE';
-    end if;
-  end if;
-
   -- Verify Cryptographic WebAuthn Assertion Proof & Anti-Replay Signature (mandatory)
   if v_proof_raw = '' then
     raise exception 'WEBAUTHN_TAMPERED';

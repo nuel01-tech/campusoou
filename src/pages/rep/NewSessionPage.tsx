@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAction, useAsync } from '@/hooks/useAsync';
 import { getClass } from '@/services/classes';
-import { createSession, generateHallPin, listSessions } from '@/services/sessions';
+import { createSession, listSessions } from '@/services/sessions';
 import { locate } from '@/lib/geo';
 import { toAppError, type AppError } from '@/lib/errors';
 import { dateForSemesterWeek, SEMESTER_WEEKS, weekFor } from '@/lib/week';
@@ -21,7 +21,6 @@ import {
   ClipboardCheckIcon,
   MapPinIcon,
   RefreshCwIcon,
-  ShieldCheckIcon,
 } from '@/components/icons';
 import type { GeoFix } from '@/types';
 
@@ -81,8 +80,6 @@ function NewSessionForm({ klass, sessions }: Awaited<ReturnType<typeof loadShape
   );
   const [radius, setRadius] = useState(String(last?.radius_m ?? 50));
   const [duration, setDuration] = useState('15');
-  const [useHallPin, setUseHallPin] = useState<boolean>(true);
-  const [hallPin, setHallPin] = useState<string>(() => generateHallPin());
   const [touched, setTouched] = useState(false);
 
   const [fix, setFix] = useState<GeoFix | null>(null);
@@ -140,7 +137,6 @@ function NewSessionForm({ klass, sessions }: Awaited<ReturnType<typeof loadShape
       duration_min: Number(duration),
       is_backfill: isBackfill,
       session_date: isBackfill ? sessionDate : undefined,
-      security_code: !isBackfill && useHallPin ? hallPin : null,
     }),
   );
 
@@ -355,45 +351,6 @@ function NewSessionForm({ klass, sessions }: Awaited<ReturnType<typeof loadShape
               onRetry={findMe}
               showMissing={touched}
             />
-
-            <div
-              className="stack-xs"
-              style={{
-                padding: '0.85rem 1rem',
-                borderRadius: '10px',
-                border: '1px solid var(--border)',
-                background: 'var(--surface-subtle)',
-              }}
-            >
-              <label className="row" style={{ gap: '0.6rem', cursor: 'pointer', justifyContent: 'space-between' }}>
-                <span className="row" style={{ gap: '0.5rem', fontWeight: 700, fontSize: '0.9rem' }}>
-                  <input
-                    type="checkbox"
-                    checked={useHallPin}
-                    onChange={(e) => setUseHallPin(e.target.checked)}
-                  />
-                  <ShieldCheckIcon size={15} />
-                  <span>Enable 4-Digit Anti-Hack Hall PIN (Blocks VPN & GPS Spoofers)</span>
-                </span>
-                {useHallPin && (
-                  <span className="row" style={{ gap: '0.4rem' }}>
-                    <Badge tone="warn">PIN: {hallPin}</Badge>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      type="button"
-                      onClick={() => setHallPin(generateHallPin())}
-                    >
-                      <RefreshCwIcon size={12} />
-                      <span>New PIN</span>
-                    </Button>
-                  </span>
-                )}
-              </label>
-              <p className="muted small">
-                When enabled, students must also enter this 4-digit PIN (which you announce inside the lecture hall). Anyone using a VPN or Fake GPS outside the hall cannot check in.
-              </p>
-            </div>
           </>
         ) : (
           <Alert tone="info" title={`Backfilling Omitted Week ${week}`}>

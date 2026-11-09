@@ -124,7 +124,6 @@ export async function checkIn(
   passkeyId: string,
   deviceToken: string,
   webauthnProof?: string,
-  securityCode?: string,
 ): Promise<Attendance> {
   const { data, error } = await supabase.rpc('check_in', {
     p_session_id: sessionId,
@@ -134,7 +133,7 @@ export async function checkIn(
     p_passkey_id: passkeyId,
     p_device_token: deviceToken,
     p_webauthn_proof: webauthnProof ?? null,
-    p_security_code: securityCode?.trim() || null,
+    p_security_code: null,
   });
 
   if (error) {
