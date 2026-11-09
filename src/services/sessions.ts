@@ -14,6 +14,13 @@ export interface NewSession {
   duration_min: number;
   is_backfill?: boolean;
   session_date?: string;
+  security_code?: string | null;
+}
+
+export function generateHallPin(): string {
+  const buf = new Uint32Array(1);
+  crypto.getRandomValues(buf);
+  return String(1000 + (buf[0]! % 9000));
 }
 
 export async function listSessions(classId: string): Promise<Session[]> {
@@ -94,13 +101,20 @@ export async function createSession(input: NewSession): Promise<Session> {
     ends = new Date(starts.getTime() + duration_min * 60_000);
   }
 
-  const session = unwrap<Session>(
-    await supabase
+  const { security_code, ...baseRest } = rest;
+  const payload = security_code
+    ? { ...baseRest, security_code: security_code.trim(), starts_at: starts.toISOString(), ends_at: ends.toISOString() }
+    : { ...baseRest, starts_at: starts.toISOString(), ends_at: ends.toISOString() };
+
+  let res = await supabase.from('sessions').insert(payload).select().single();
+  if (res.error && security_code) {
+    res = await supabase
       .from('sessions')
-      .insert({ ...rest, starts_at: starts.toISOString(), ends_at: ends.toISOString() })
+      .insert({ ...baseRest, starts_at: starts.toISOString(), ends_at: ends.toISOString() })
       .select()
-      .single(),
-  );
+      .single();
+  }
+  const session = unwrap<Session>(res);
   await autoMarkClassRepsForSession(session.id, session.class_id);
   return session;
 }
@@ -108,6 +122,20 @@ export async function createSession(input: NewSession): Promise<Session> {
 export async function updateSessionWeek(id: string, week: number): Promise<Session> {
   return unwrap(
     await supabase.from('sessions').update({ week }).eq('id', id).select().single(),
+  );
+}
+
+export async function updateSessionSecurityCode(
+  id: string,
+  securityCode: string | null,
+): Promise<Session> {
+  return unwrap(
+    await supabase
+      .from('sessions')
+      .update({ security_code: securityCode?.trim() || null })
+      .eq('id', id)
+      .select()
+      .single(),
   );
 }
 

@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { checkIn } from '@/services/student';
 import { locate } from '@/lib/geo';
 import { verifyDevicePasskey } from '@/lib/webauthn';
-import { toAppError, type AppError } from '@/lib/errors';
+import { appError, toAppError, type AppError } from '@/lib/errors';
 import { formatTime, timeLeft } from '@/lib/format';
-import { Alert, Badge, Button, StatusPill } from '@/components/ui';
+import { Alert, Badge, Button, StatusPill, TextField } from '@/components/ui';
 import { Clock3Icon, KeyRoundIcon, MapPinIcon, ShieldCheckIcon } from '@/components/icons';
 import type { Attendance, Session, Student } from '@/types';
 
@@ -22,15 +22,25 @@ export function CheckInCard({ session, student, checkedIn, now, onCheckedIn }: P
   const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState<AppError | null>(null);
   const [lastFix, setLastFix] = useState<{ accuracy: number } | null>(null);
+  const [hallPin, setHallPin] = useState('');
+
+  const requiresPin = Boolean(session.requires_code || session.security_code);
 
   const run = async () => {
     setError(null);
+    if (requiresPin && hallPin.trim().length < 4) {
+      setError(appError('SECURITY_CODE_REQUIRED'));
+      return;
+    }
+
     try {
       setPhase('auth');
-      // 1. Verify the exact hardware passkey & persistent device token bound during claim
-      const { passkeyId, deviceToken } = await verifyDevicePasskey(
+      // 1. Verify the exact hardware passkey & persistent device token bound during claim,
+      //    and generate a cryptographic WebAuthn assertion proof bound to this session.
+      const { passkeyId, deviceToken, webauthnProof } = await verifyDevicePasskey(
         student.passkey_id,
         student.device_token,
+        session.id,
       );
 
       setPhase('locating');
@@ -38,7 +48,14 @@ export function CheckInCard({ session, student, checkedIn, now, onCheckedIn }: P
       setLastFix({ accuracy: Math.round(fix.accuracy) });
 
       setPhase('sending');
-      const row = await checkIn(session.id, fix, passkeyId, deviceToken);
+      const row = await checkIn(
+        session.id,
+        fix,
+        passkeyId,
+        deviceToken,
+        webauthnProof,
+        requiresPin ? hallPin.trim() : undefined,
+      );
       onCheckedIn(row);
     } catch (e) {
       const err = toAppError(e);
@@ -87,6 +104,14 @@ export function CheckInCard({ session, student, checkedIn, now, onCheckedIn }: P
         <Badge tone="info" icon={<KeyRoundIcon size={11} />}>
           Passkey Verification Required
         </Badge>
+        <Badge tone="ok" icon={<ShieldCheckIcon size={11} />}>
+          Anti-Spoof & Anti-VPN Shield Active
+        </Badge>
+        {requiresPin && (
+          <Badge tone="warn">
+            4-Digit Hall PIN Required
+          </Badge>
+        )}
         {checkedIn?.distance_m != null && (
           <Badge tone="ok" icon={<MapPinIcon size={11} />}>
             Distance: {Math.round(checkedIn.distance_m)}m from venue
@@ -113,6 +138,19 @@ export function CheckInCard({ session, student, checkedIn, now, onCheckedIn }: P
         </div>
       ) : (
         <>
+          {requiresPin && (
+            <div style={{ marginBottom: '0.75rem' }}>
+              <TextField
+                label="4-Digit Live Hall Security PIN"
+                placeholder="Enter 4-digit PIN announced in class"
+                inputMode="numeric"
+                maxLength={6}
+                value={hallPin}
+                onChange={(e) => setHallPin(e.target.value.replace(/\D+/g, '').slice(0, 6))}
+                hint="Your Class Rep enabled Anti-Hack Hall Lock. Enter the 4-digit PIN announced inside the lecture venue."
+              />
+            </div>
+          )}
           <Button size="lg" block onClick={run} loading={busy} disabled={student.suspended}>
             <ShieldCheckIcon size={16} />
             <span>

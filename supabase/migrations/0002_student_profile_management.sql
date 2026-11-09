@@ -40,6 +40,12 @@ begin
     raise exception 'INVALID_MATRIC_NUMBER';
   end if;
 
+  if not coalesce(v_student.is_rep, false)
+     and public.is_student_class_rep(v_student.class_id, v_name, false)
+  then
+    raise exception 'NAME_MISMATCH';
+  end if;
+
   v_matric_changed := v_matric <> public.normalize_matric(v_student.matric_no);
 
   if v_matric_changed then

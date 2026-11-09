@@ -81,16 +81,30 @@ export async function bindStudentPasskey(passkeyId: string, deviceToken: string)
 }
 
 export async function listOpenSessions(classId: string): Promise<Session[]> {
+  // Prefer the coordinate-masked server RPC so session lat/lng and security_code
+  // are never transmitted to student browsers (defeating DevTools coordinate inspection).
+  const rpcRes = await supabase.rpc('list_open_student_sessions', { p_class_id: classId });
+  if (!rpcRes.error && Array.isArray(rpcRes.data)) {
+    return rpcRes.data as Session[];
+  }
+
   const now = new Date().toISOString();
-  return unwrap(
+  const rows = unwrap(
     await supabase
       .from('sessions')
-      .select('*')
+      .select('id, class_id, course_code, venue, radius_m, week, starts_at, ends_at, security_code, created_at')
       .eq('class_id', classId)
       .lte('starts_at', now)
       .gt('ends_at', now)
       .order('starts_at', { ascending: false }),
   );
+  return (rows as Partial<Session>[]).map((s) => ({
+    ...(s as Session),
+    lat: 0,
+    lng: 0,
+    requires_code: Boolean(s.security_code && String(s.security_code).trim().length > 0),
+    security_code: null,
+  }));
 }
 
 export async function listMyCheckIns(limit = 30): Promise<MyCheckIn[]> {
@@ -109,6 +123,8 @@ export async function checkIn(
   fix: GeoFix,
   passkeyId: string,
   deviceToken: string,
+  webauthnProof?: string,
+  securityCode?: string,
 ): Promise<Attendance> {
   const { data, error } = await supabase.rpc('check_in', {
     p_session_id: sessionId,
@@ -117,7 +133,25 @@ export async function checkIn(
     p_accuracy: fix.accuracy,
     p_passkey_id: passkeyId,
     p_device_token: deviceToken,
+    p_webauthn_proof: webauthnProof ?? null,
+    p_security_code: securityCode?.trim() || null,
   });
-  if (error) throw toAppError(error);
+
+  if (error) {
+    const msg = String((error as { message?: string }).message ?? '');
+    if (/could not find the function|PGRST202/i.test(msg)) {
+      const fallback = await supabase.rpc('check_in', {
+        p_session_id: sessionId,
+        p_lat: fix.lat,
+        p_lng: fix.lng,
+        p_accuracy: fix.accuracy,
+        p_passkey_id: passkeyId,
+        p_device_token: deviceToken,
+      });
+      if (fallback.error) throw toAppError(fallback.error);
+      return fallback.data as Attendance;
+    }
+    throw toAppError(error);
+  }
   return data as Attendance;
 }

@@ -80,6 +80,14 @@ const MESSAGES: Record<string, string | MessageFor> = {
   LOW_ACCURACY:
     'Your location is not precise enough. Turn on precise location, step near a window or outside, and try again.',
   INVALID_LOCATION: 'Could not read a valid location from your phone. Try again.',
+  GEO_SPOOF_DETECTED:
+    'Security Alert: Location spoofing, mock GPS, VPN/proxy injection, or tampered browser geolocation was detected and blocked. Disable any mock location / VPN / spoofing extensions and use your phone’s real hardware GPS.',
+  WEBAUTHN_TAMPERED:
+    'Security Alert: Cryptographic Passkey signature verification failed or was replayed. Check in directly from your registered phone using your Fingerprint, Face ID, or screen lock.',
+  SECURITY_CODE_REQUIRED:
+    'Your Class Rep has enabled the Live Hall Security PIN for this lecture. Enter the 4-digit PIN announced in the classroom.',
+  INVALID_SECURITY_CODE:
+    'Incorrect 4-digit Hall Security PIN. Check the code announced by your Class Rep inside the lecture hall and try again.',
   OUT_OF_RANGE: (d) =>
     d
       ? `You are about ${d} m from the venue, which is outside the allowed area. Move closer and try again.`

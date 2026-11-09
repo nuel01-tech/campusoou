@@ -9,11 +9,13 @@ import {
   closeSession,
   deleteSession,
   extendSession,
+  generateHallPin,
   getSession,
   listAttendance,
   markBatchAttendance,
   markPresent,
   removeAttendance,
+  updateSessionSecurityCode,
   updateSessionWeek,
 } from '@/services/sessions';
 import {
@@ -31,6 +33,8 @@ import {
   CalendarDaysIcon,
   MessageSquareIcon,
   QrCodeIcon,
+  RefreshCwIcon,
+  ShieldCheckIcon,
   XIcon,
   ZapIcon,
 } from '@/components/icons';
@@ -112,6 +116,17 @@ export default function LiveSessionPage() {
     const updated = await updateSessionWeek(sessionId, nextWeek);
     updateSession(updated);
     toast(`Moved session to Week ${nextWeek}`);
+  });
+
+  const setHallPin = useAction(async (nextPin: string | null) => {
+    if (!base.data) return;
+    const updated = await updateSessionSecurityCode(sessionId, nextPin);
+    updateSession(updated);
+    toast(
+      nextPin
+        ? `Anti-Hack Hall PIN active: ${nextPin} (Share only inside the lecture hall)`
+        : 'Hall PIN protection turned off',
+    );
   });
 
   const close = useAction(async () => updateSession(await closeSession(sessionId)));
@@ -313,6 +328,42 @@ export default function LiveSessionPage() {
               {session.week > 15 && <option value={session.week}>Week {session.week}</option>}
             </select>
           </label>
+          {session.security_code ? (
+            <div className="row" style={{ gap: '0.35rem' }}>
+              <Badge tone="warn" icon={<ShieldCheckIcon size={12} />}>
+                Hall PIN: {session.security_code}
+              </Badge>
+              <Button
+                size="sm"
+                variant="secondary"
+                loading={setHallPin.pending}
+                onClick={() => void setHallPin.run(generateHallPin())}
+                title="Generate a new 4-digit Hall PIN to block leaked codes"
+              >
+                <RefreshCwIcon size={12} />
+                <span>New PIN</span>
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                loading={setHallPin.pending}
+                onClick={() => void setHallPin.run(null)}
+              >
+                Disable PIN
+              </Button>
+            </div>
+          ) : (
+            <Button
+              size="sm"
+              variant="secondary"
+              loading={setHallPin.pending}
+              onClick={() => void setHallPin.run(generateHallPin())}
+              title="Require a 4-digit PIN announced in class so VPN / GPS spoofers outside the hall cannot check in"
+            >
+              <ShieldCheckIcon size={13} />
+              <span>Lock with Hall PIN</span>
+            </Button>
+          )}
           {(overrideActive || !live) && (
             <Button size="sm" variant="ghost" onClick={() => setOverrideActive((v) => !v)}>
               {overrideActive ? 'Lock list' : 'Edit roll'}
@@ -326,7 +377,15 @@ export default function LiveSessionPage() {
         </div>
       </section>
 
-      <ErrorAlert error={attendance.error ?? close.error ?? extend.error ?? remove.error} />
+      <ErrorAlert
+        error={
+          attendance.error ??
+          close.error ??
+          extend.error ??
+          remove.error ??
+          setHallPin.error
+        }
+      />
 
       <div className="toolbar">
         <div className="segmented" role="tablist" aria-label="Filter students">
@@ -400,14 +459,21 @@ export default function LiveSessionPage() {
                       ) : isLate ? (
                         <StatusPill status="late" label={`Late · ${formatTime(row.checked_in_at)}`} />
                       ) : (
-                        <StatusPill
-                          status="present"
-                          label={
-                            s.is_rep && !row.manual
-                              ? 'Present · Auto (Rep)'
-                              : `Present · ${formatTime(row.checked_in_at)}`
-                          }
-                        />
+                        <div className="row" style={{ gap: '0.4rem', flexWrap: 'wrap' }}>
+                          <StatusPill
+                            status="present"
+                            label={
+                              s.is_rep && !row.manual
+                                ? 'Present · Auto (Rep)'
+                                : `Present · ${formatTime(row.checked_in_at)}`
+                            }
+                          />
+                          {!row.manual && !s.is_rep && row.distance_m != null && (
+                            <span className="mono muted small" title={`GPS Accuracy: ±${Math.round(row.accuracy_m ?? 0)}m`}>
+                              {Math.round(row.distance_m)}m
+                            </span>
+                          )}
+                        </div>
                       )
                     ) : (
                       <StatusPill status="absent" />
@@ -496,6 +562,22 @@ export default function LiveSessionPage() {
               <p className="mono" style={{ fontSize: '1.5rem', fontWeight: 800, letterSpacing: '0.12em' }}>
                 CODE: {klass.join_code}
               </p>
+              {session.security_code && (
+                <p
+                  className="mono"
+                  style={{
+                    fontSize: '1.25rem',
+                    fontWeight: 800,
+                    color: 'var(--accent)',
+                    background: 'var(--accent-soft)',
+                    padding: '0.35rem 0.75rem',
+                    borderRadius: '8px',
+                    margin: '0 auto',
+                  }}
+                >
+                  HALL PIN: {session.security_code}
+                </p>
+              )}
               <p className="small muted">
                 Students can scan this QR code or visit <strong className="mono">{window.location.origin}/join</strong>{' '}
                 and enter the 6-character code.

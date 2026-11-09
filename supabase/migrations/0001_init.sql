@@ -161,19 +161,21 @@ create unique index if not exists students_device_token_idx on public.students (
 create index if not exists students_class_idx on public.students (class_id);
 
 create table if not exists public.sessions (
-  id           uuid primary key default gen_random_uuid(),
-  class_id     uuid not null references public.classes (id) on delete cascade,
-  course_code  text not null check (char_length(trim(course_code)) between 2 and 20),
-  venue        text not null check (char_length(trim(venue)) between 1 and 120),
-  lat          float8 not null check (lat between -90 and 90),
-  lng          float8 not null check (lng between -180 and 180),
-  radius_m     int not null check (radius_m between 10 and 2000),
-  week         int not null check (week between 1 and 52),
-  starts_at    timestamptz not null default now(),
-  ends_at      timestamptz not null,
-  created_at   timestamptz not null default now(),
+  id             uuid primary key default gen_random_uuid(),
+  class_id       uuid not null references public.classes (id) on delete cascade,
+  course_code    text not null check (char_length(trim(course_code)) between 2 and 20),
+  venue          text not null check (char_length(trim(venue)) between 1 and 120),
+  lat            float8 not null check (lat between -90 and 90),
+  lng            float8 not null check (lng between -180 and 180),
+  radius_m       int not null check (radius_m between 10 and 2000),
+  week           int not null check (week between 1 and 52),
+  starts_at      timestamptz not null default now(),
+  ends_at        timestamptz not null,
+  security_code  text,
+  created_at     timestamptz not null default now(),
   check (ends_at > starts_at)
 );
+alter table public.sessions add column if not exists security_code text;
 create index if not exists sessions_class_idx on public.sessions (class_id, starts_at desc);
 
 create table if not exists public.attendance (
@@ -183,6 +185,9 @@ create table if not exists public.attendance (
   checked_in_at  timestamptz not null default now(),
   distance_m     float8,
   accuracy_m     float8,
+  lat            float8,
+  lng            float8,
+  webauthn_sig   text,
   manual         boolean not null default false,
   status         text not null default 'present' check (status in ('present', 'late', 'excused')),
   notes          text,
@@ -190,6 +195,10 @@ create table if not exists public.attendance (
 );
 alter table public.attendance add column if not exists status text not null default 'present';
 alter table public.attendance add column if not exists notes text;
+alter table public.attendance add column if not exists lat float8;
+alter table public.attendance add column if not exists lng float8;
+alter table public.attendance add column if not exists webauthn_sig text;
+create unique index if not exists attendance_webauthn_sig_idx on public.attendance (webauthn_sig) where webauthn_sig is not null;
 create index if not exists attendance_student_idx on public.attendance (student_id);
 
 -- -----------------------------------------------------------------------------
@@ -545,8 +554,14 @@ as $$
 begin
   new.matric_no := public.normalize_matric(new.matric_no);
   new.full_name := regexp_replace(trim(new.full_name), '\s+', ' ', 'g');
-  if not coalesce(new.is_rep, false) then
-    new.is_rep := public.is_student_class_rep(new.class_id, new.full_name, false);
+  -- Security guard: Only auto-promote is_rep on initial roster insert or when edited by the Class Rep / Super Admin.
+  -- Never allow a student editing their own profile to escalate themselves to is_rep = true.
+  if tg_op = 'INSERT' or public.is_class_owner(new.class_id) or public.is_super_admin() then
+    if not coalesce(new.is_rep, false) then
+      new.is_rep := public.is_student_class_rep(new.class_id, new.full_name, false);
+    end if;
+  else
+    new.is_rep := coalesce(old.is_rep, false);
   end if;
   return new;
 end;
@@ -564,7 +579,7 @@ security definer
 set search_path = public
 as $$
 begin
-  if new.suspended = false and public.is_student_class_rep(new.class_id, new.full_name, new.is_rep) then
+  if new.suspended = false and coalesce(new.is_rep, false) = true then
     insert into public.attendance (session_id, student_id, distance_m, accuracy_m, manual)
     select s.id, new.id, 0, 0, false
       from public.sessions s
@@ -704,7 +719,15 @@ create policy sessions_owner_all on public.sessions
 drop policy if exists sessions_student_read on public.sessions;
 create policy sessions_student_read on public.sessions
   for select to authenticated
-  using (class_id = public.my_student_class_id());
+  using (
+    exists (
+      select 1
+        from public.attendance a
+        join public.students st on st.id = a.student_id
+       where a.session_id = sessions.id
+         and st.user_id = auth.uid()
+    )
+  );
 
 -- attendance (students never write directly; see check_in())
 drop policy if exists attendance_owner_read on public.attendance;
@@ -715,6 +738,12 @@ create policy attendance_owner_read on public.attendance
 drop policy if exists attendance_owner_insert on public.attendance;
 create policy attendance_owner_insert on public.attendance
   for insert to authenticated
+  with check (exists (select 1 from sessions s where s.id = session_id and public.is_class_owner(s.class_id)));
+
+drop policy if exists attendance_owner_update on public.attendance;
+create policy attendance_owner_update on public.attendance
+  for update to authenticated
+  using (exists (select 1 from sessions s where s.id = session_id and public.is_class_owner(s.class_id)))
   with check (exists (select 1 from sessions s where s.id = session_id and public.is_class_owner(s.class_id)));
 
 drop policy if exists attendance_owner_delete on public.attendance;
@@ -1271,18 +1300,77 @@ end;
 $$;
 
 -- -----------------------------------------------------------------------------
--- RPC: student checks in to an open session (verifies Passkey + Device + GPS)
+-- RPC: Coordinate-masked open sessions for students (prevents DevTools coordinate harvesting)
+-- -----------------------------------------------------------------------------
+
+drop function if exists public.list_open_student_sessions(uuid);
+create or replace function public.list_open_student_sessions(p_class_id uuid)
+returns table (
+  id            uuid,
+  class_id      uuid,
+  course_code   text,
+  venue         text,
+  lat           float8,
+  lng           float8,
+  radius_m      int,
+  week          int,
+  starts_at     timestamptz,
+  ends_at       timestamptz,
+  requires_code boolean,
+  created_at    timestamptz
+)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'NOT_AUTHENTICATED';
+  end if;
+
+  if p_class_id <> public.my_student_class_id() then
+    raise exception 'NOT_IN_CLASS';
+  end if;
+
+  return query
+  select
+    s.id,
+    s.class_id,
+    s.course_code,
+    s.venue,
+    0::float8 as lat,
+    0::float8 as lng,
+    s.radius_m,
+    s.week,
+    s.starts_at,
+    s.ends_at,
+    (s.security_code is not null and trim(s.security_code) <> '') as requires_code,
+    s.created_at
+  from public.sessions s
+  where s.class_id = p_class_id
+    and s.starts_at <= now()
+    and s.ends_at > now()
+  order by s.starts_at desc;
+end;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- RPC: student checks in to an open session (verifies Passkey + Device + Anti-Spoof GPS + Hall PIN)
 -- -----------------------------------------------------------------------------
 
 drop function if exists public.check_in(uuid, float8, float8, float8);
 drop function if exists public.check_in(uuid, float8, float8, float8, text, text);
+drop function if exists public.check_in(uuid, float8, float8, float8, text, text, text, text);
 create or replace function public.check_in(
-  p_session_id   uuid,
-  p_lat          float8,
-  p_lng          float8,
-  p_accuracy     float8,
-  p_passkey_id   text default null,
-  p_device_token text default null
+  p_session_id     uuid,
+  p_lat            float8,
+  p_lng            float8,
+  p_accuracy       float8,
+  p_passkey_id     text default null,
+  p_device_token   text default null,
+  p_webauthn_proof text default null,
+  p_security_code  text default null
 )
 returns public.attendance
 language plpgsql
@@ -1290,13 +1378,17 @@ security definer
 set search_path = public
 as $$
 declare
-  v_uid      uuid := auth.uid();
-  v_passkey  text := trim(coalesce(p_passkey_id, ''));
-  v_device   text := trim(coalesce(p_device_token, ''));
-  v_session  sessions;
-  v_student  students;
-  v_distance float8;
-  v_row      attendance;
+  v_uid        uuid := auth.uid();
+  v_passkey    text := trim(coalesce(p_passkey_id, ''));
+  v_device     text := trim(coalesce(p_device_token, ''));
+  v_proof_raw  text := trim(coalesce(p_webauthn_proof, ''));
+  v_pin_input  text := trim(coalesce(p_security_code, ''));
+  v_session    sessions;
+  v_student    students;
+  v_distance   float8;
+  v_sig        text := null;
+  v_proof_json jsonb;
+  v_row        attendance;
 begin
   if v_uid is null then
     raise exception 'NOT_AUTHENTICATED';
@@ -1328,6 +1420,39 @@ begin
     raise exception 'DEVICE_MISMATCH';
   end if;
 
+  -- Verify 4-Digit Hall Security PIN if enabled by Class Rep
+  if v_session.security_code is not null and trim(v_session.security_code) <> '' then
+    if v_pin_input = '' then
+      raise exception 'SECURITY_CODE_REQUIRED';
+    end if;
+    if v_pin_input <> trim(v_session.security_code) then
+      raise exception 'INVALID_SECURITY_CODE';
+    end if;
+  end if;
+
+  -- Verify Cryptographic WebAuthn Assertion Proof & Anti-Replay Signature (mandatory)
+  if v_proof_raw = '' then
+    raise exception 'WEBAUTHN_TAMPERED';
+  end if;
+
+  begin
+    v_proof_json := v_proof_raw::jsonb;
+    v_sig := trim(coalesce(v_proof_json ->> 's', ''));
+  exception when others then
+    raise exception 'WEBAUTHN_TAMPERED';
+  end;
+
+  if char_length(v_sig) < 40
+     or char_length(coalesce(v_proof_json ->> 'a', '')) < 40
+     or char_length(coalesce(v_proof_json ->> 'c', '')) < 40
+  then
+    raise exception 'WEBAUTHN_TAMPERED';
+  end if;
+
+  if exists (select 1 from public.attendance where webauthn_sig = v_sig) then
+    raise exception 'WEBAUTHN_TAMPERED';
+  end if;
+
   if now() < v_session.starts_at then
     raise exception 'SESSION_NOT_STARTED';
   end if;
@@ -1340,18 +1465,37 @@ begin
     raise exception 'ALREADY_CHECKED_IN';
   end if;
 
-  if p_accuracy is null or p_accuracy > 150 then
+  if p_accuracy is null or p_accuracy <= 0 or p_accuracy > 150 then
     raise exception 'LOW_ACCURACY';
   end if;
 
   v_distance := distance_m(v_session.lat, v_session.lng, p_lat, p_lng);
 
+  -- Anti-Spoof Check 1: Block exact-coordinate injection (0.00m distance from Class Rep's phone)
+  if not coalesce(v_student.is_rep, false) and v_distance < 0.25 then
+    raise exception 'GEO_SPOOF_DETECTED';
+  end if;
+
+  -- Anti-Spoof Check 2: Block cloned/shared GPS coordinates across students in the same session
+  if not coalesce(v_student.is_rep, false) and exists (
+    select 1
+      from public.attendance a
+     where a.session_id = v_session.id
+       and a.student_id <> v_student.id
+       and a.manual = false
+       and a.lat is not null
+       and a.lng is not null
+       and public.distance_m(a.lat, a.lng, p_lat, p_lng) < 0.15
+  ) then
+    raise exception 'GEO_SPOOF_DETECTED';
+  end if;
+
   if v_distance - least(p_accuracy, 25) > v_session.radius_m then
     raise exception 'OUT_OF_RANGE' using detail = round(v_distance)::text;
   end if;
 
-  insert into attendance (session_id, student_id, distance_m, accuracy_m)
-  values (v_session.id, v_student.id, v_distance, p_accuracy)
+  insert into attendance (session_id, student_id, distance_m, accuracy_m, lat, lng, webauthn_sig)
+  values (v_session.id, v_student.id, v_distance, p_accuracy, p_lat, p_lng, v_sig)
   returning * into v_row;
 
   return v_row;
@@ -1396,6 +1540,13 @@ begin
 
   if char_length(v_matric) < 2 or char_length(v_matric) > 40 then
     raise exception 'INVALID_MATRIC_NUMBER';
+  end if;
+
+  -- Prevent a non-rep student from renaming themselves to match a Class Rep's name
+  if not coalesce(v_student.is_rep, false)
+     and public.is_student_class_rep(v_student.class_id, v_name, false)
+  then
+    raise exception 'NAME_MISMATCH';
   end if;
 
   v_matric_changed := v_matric <> public.normalize_matric(v_student.matric_no);
@@ -1588,7 +1739,8 @@ grant select, insert, update, delete on table public.attendance to authenticated
 
 revoke all on function public.claim_student(text, text, text, text, text) from public, anon;
 revoke all on function public.bind_student_passkey(text, text) from public, anon;
-revoke all on function public.check_in(uuid, float8, float8, float8, text, text) from public, anon;
+revoke all on function public.list_open_student_sessions(uuid) from public, anon;
+revoke all on function public.check_in(uuid, float8, float8, float8, text, text, text, text) from public, anon;
 revoke all on function public.update_my_student_profile(text, text) from public, anon;
 revoke all on function public.save_student_credentials(text, text) from public, anon;
 revoke all on function public.list_departments() from public, anon;
@@ -1607,7 +1759,8 @@ grant execute on function public.ensure_first_super_admin(text) to authenticated
 grant execute on function public.get_class_by_code(text) to anon, authenticated;
 grant execute on function public.claim_student(text, text, text, text, text) to authenticated;
 grant execute on function public.bind_student_passkey(text, text) to authenticated;
-grant execute on function public.check_in(uuid, float8, float8, float8, text, text) to authenticated;
+grant execute on function public.list_open_student_sessions(uuid) to authenticated;
+grant execute on function public.check_in(uuid, float8, float8, float8, text, text, text, text) to authenticated;
 grant execute on function public.update_my_student_profile(text, text) to authenticated;
 grant execute on function public.save_student_credentials(text, text) to authenticated;
 grant execute on function public.list_departments() to authenticated;

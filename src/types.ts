@@ -81,6 +81,8 @@ export interface Session {
   week: number;
   starts_at: string;
   ends_at: string;
+  security_code?: string | null;
+  requires_code?: boolean;
   created_at: string;
 }
 

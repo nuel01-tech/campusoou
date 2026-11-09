@@ -22,6 +22,70 @@ interface LocateOptions {
 }
 
 /**
+ * Inspects the browser Geolocation runtime for script injection, console monkey-patching,
+ * spoofing extensions (e.g., Location Guard / Vytal), or headless automation.
+ */
+export function detectGeolocationTampering(): boolean {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+
+  // 1. Block automated headless browsers (Puppeteer / Playwright / Selenium)
+  if ((navigator as Navigator & { webdriver?: boolean }).webdriver === true) {
+    return true;
+  }
+
+  const geo = navigator.geolocation;
+  if (!geo) return false;
+
+  try {
+    // 2. Detect direct property overrides on the navigator.geolocation instance
+    const ownWatch = Object.getOwnPropertyDescriptor(geo, 'watchPosition');
+    const ownGet = Object.getOwnPropertyDescriptor(geo, 'getCurrentPosition');
+    if (ownWatch || ownGet) {
+      return true;
+    }
+
+    // 3. Verify native C++ implementation string on watchPosition & getCurrentPosition
+    const watchStr = Function.prototype.toString.call(geo.watchPosition);
+    const getStr = Function.prototype.toString.call(geo.getCurrentPosition);
+    if (!/\[native code\]/.test(watchStr) || !/\[native code\]/.test(getStr)) {
+      return true;
+    }
+  } catch {
+    return true;
+  }
+
+  return false;
+}
+
+function isSyntheticPosition(pos: GeolocationPosition): boolean {
+  try {
+    if (!pos || !pos.coords) return true;
+    const { latitude, longitude, accuracy } = pos.coords;
+    if (
+      !Number.isFinite(latitude) ||
+      !Number.isFinite(longitude) ||
+      !Number.isFinite(accuracy) ||
+      accuracy <= 0
+    ) {
+      return true;
+    }
+
+    // Injected JS objects usually define latitude/longitude as own data properties on coords
+    // rather than inheriting getters from GeolocationCoordinates.prototype.
+    const ownLat = Object.getOwnPropertyDescriptor(pos.coords, 'latitude');
+    const ownLng = Object.getOwnPropertyDescriptor(pos.coords, 'longitude');
+    if (ownLat && 'value' in ownLat && ownLng && 'value' in ownLng && typeof GeolocationCoordinates !== 'undefined') {
+      if (!(pos.coords instanceof GeolocationCoordinates)) {
+        return true;
+      }
+    }
+  } catch {
+    return true;
+  }
+  return false;
+}
+
+/**
  * Gets the current position. Phones often return a coarse fix first and then
  * refine it, so we watch briefly and return the most accurate reading.
  */
@@ -29,6 +93,7 @@ export function locate({ targetAccuracy = 30, timeoutMs = 12_000 }: LocateOption
   return new Promise((resolve, reject) => {
     if (!window.isSecureContext) return reject(appError('GEO_INSECURE'));
     if (!('geolocation' in navigator)) return reject(appError('GEO_UNSUPPORTED'));
+    if (detectGeolocationTampering()) return reject(appError('GEO_SPOOF_DETECTED'));
 
     let best: GeoFix | null = null;
     let settled = false;
@@ -43,6 +108,9 @@ export function locate({ targetAccuracy = 30, timeoutMs = 12_000 }: LocateOption
 
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
+        if (isSyntheticPosition(pos)) {
+          return finish(() => reject(appError('GEO_SPOOF_DETECTED')));
+        }
         const fix = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
         if (!best || fix.accuracy < best.accuracy) best = fix;
         if (fix.accuracy <= targetAccuracy) finish(() => resolve(fix));

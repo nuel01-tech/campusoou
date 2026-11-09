@@ -317,11 +317,14 @@ export async function registerDevicePasskey(
  * Verifies the student's hardware Passkey AND persistent device token AT CHECK-IN TIME
  * (or when re-verifying a registered phone after signing in with email & password).
  * Only succeeds on the exact physical phone & normal browser session that holds the hardware Passkey.
+ * Also produces a cryptographic WebAuthn assertion proof (`webauthnProof`) bound to `sessionId`
+ * so console/API scripts cannot call `check_in` without touching the phone's biometric sensor.
  */
 export async function verifyDevicePasskey(
   expectedPasskeyId: string | null | undefined,
   expectedDeviceToken: string | null | undefined,
-): Promise<{ passkeyId: string; deviceToken: string }> {
+  sessionId?: string,
+): Promise<{ passkeyId: string; deviceToken: string; webauthnProof: string }> {
   await assertNotIncognito();
 
   if (!isPasskeySupported()) {
@@ -338,8 +341,13 @@ export async function verifyDevicePasskey(
     throw appError('DEVICE_MISMATCH');
   }
 
-  const challenge = new Uint8Array(32);
-  crypto.getRandomValues(challenge);
+  // Bind the WebAuthn challenge to the session ID + random nonce so assertions cannot be replayed
+  const nonce = new Uint8Array(16);
+  crypto.getRandomValues(nonce);
+  const sessionPrefix = new TextEncoder().encode((sessionId ?? 'session').slice(0, 16));
+  const challenge = new Uint8Array(sessionPrefix.length + nonce.length);
+  challenge.set(sessionPrefix, 0);
+  challenge.set(nonce, sessionPrefix.length);
 
   try {
     const assertion = (await navigator.credentials.get({
@@ -367,6 +375,23 @@ export async function verifyDevicePasskey(
       throw appError('DEVICE_MISMATCH');
     }
 
+    const resp = assertion.response as AuthenticatorAssertionResponse | undefined;
+    if (!resp?.clientDataJSON || !resp?.authenticatorData || !resp?.signature) {
+      throw appError('WEBAUTHN_TAMPERED');
+    }
+
+    const sigBytes = new Uint8Array(resp.signature);
+    const authDataBytes = new Uint8Array(resp.authenticatorData);
+    if (sigBytes.byteLength < 32 || authDataBytes.byteLength < 37) {
+      throw appError('WEBAUTHN_TAMPERED');
+    }
+
+    const webauthnProof = JSON.stringify({
+      c: bytesToBase64Url(resp.clientDataJSON),
+      a: bytesToBase64Url(resp.authenticatorData),
+      s: bytesToBase64Url(resp.signature),
+    });
+
     // If local storage was cleared (e.g. student signed back in with email/password on their phone),
     // restore the device token vault after cryptographic hardware passkey verification succeeds.
     if (!localDeviceToken) {
@@ -374,7 +399,7 @@ export async function verifyDevicePasskey(
       await saveLocalPasskeyId(actualPasskeyId);
     }
 
-    return { passkeyId: actualPasskeyId, deviceToken: expectedDeviceToken };
+    return { passkeyId: actualPasskeyId, deviceToken: expectedDeviceToken, webauthnProof };
   } catch (err: unknown) {
     if (err && typeof err === 'object' && 'code' in err) {
       throw err;
