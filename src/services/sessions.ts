@@ -12,6 +12,8 @@ export interface NewSession {
   radius_m: number;
   week: number;
   duration_min: number;
+  is_backfill?: boolean;
+  session_date?: string;
 }
 
 export async function listSessions(classId: string): Promise<Session[]> {
@@ -72,9 +74,26 @@ export async function autoMarkClassRepsForSession(
 }
 
 export async function createSession(input: NewSession): Promise<Session> {
-  const { duration_min, ...rest } = input;
-  const starts = new Date();
-  const ends = new Date(starts.getTime() + duration_min * 60_000);
+  const { duration_min, is_backfill, session_date, ...rest } = input;
+  let starts: Date;
+  let ends: Date;
+
+  if (is_backfill) {
+    // Create a closed past session for manual attendance backfill of an omitted week.
+    const parsed = session_date ? new Date(`${session_date}T09:00:00`) : null;
+    const nowMs = Date.now();
+    if (parsed && !Number.isNaN(parsed.getTime()) && parsed.getTime() < nowMs - 120_000) {
+      starts = parsed;
+      ends = new Date(starts.getTime() + 60_000);
+    } else {
+      starts = new Date(nowMs - 120_000);
+      ends = new Date(nowMs - 60_000);
+    }
+  } else {
+    starts = new Date();
+    ends = new Date(starts.getTime() + duration_min * 60_000);
+  }
+
   const session = unwrap<Session>(
     await supabase
       .from('sessions')
@@ -84,6 +103,12 @@ export async function createSession(input: NewSession): Promise<Session> {
   );
   await autoMarkClassRepsForSession(session.id, session.class_id);
   return session;
+}
+
+export async function updateSessionWeek(id: string, week: number): Promise<Session> {
+  return unwrap(
+    await supabase.from('sessions').update({ week }).eq('id', id).select().single(),
+  );
 }
 
 export async function closeSession(id: string): Promise<Session> {

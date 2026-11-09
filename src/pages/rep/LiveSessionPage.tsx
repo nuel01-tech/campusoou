@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAction, useAsync, useNow, usePolling } from '@/hooks/useAsync';
 import { useToast } from '@/hooks/useToast';
 import { getClass } from '@/services/classes';
@@ -14,6 +14,7 @@ import {
   markBatchAttendance,
   markPresent,
   removeAttendance,
+  updateSessionWeek,
 } from '@/services/sessions';
 import {
   Badge,
@@ -27,6 +28,7 @@ import {
   TextField,
 } from '@/components/ui';
 import {
+  CalendarDaysIcon,
   MessageSquareIcon,
   QrCodeIcon,
   XIcon,
@@ -34,12 +36,14 @@ import {
 } from '@/components/icons';
 import { toAppError } from '@/lib/errors';
 import { formatDate, formatTime, isOpen, timeLeft } from '@/lib/format';
+import { SEMESTER_WEEKS } from '@/lib/week';
 import type { Attendance, Session, Student } from '@/types';
 
 type Filter = 'all' | 'present' | 'absent' | 'late' | 'excused';
 
 export default function LiveSessionPage() {
   const { sessionId = '' } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const toast = useToast();
   const now = useNow(5_000);
@@ -47,7 +51,9 @@ export default function LiveSessionPage() {
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
   const [busyStudent, setBusyStudent] = useState<string | null>(null);
-  const [overrideActive, setOverrideActive] = useState(false);
+  const [overrideActive, setOverrideActive] = useState<boolean>(
+    () => searchParams.get('manual') === '1',
+  );
   const [secretCount, setSecretCount] = useState(0);
 
   // Modals for Attendance Management Features
@@ -86,6 +92,13 @@ export default function LiveSessionPage() {
 
   const live = base.data ? isOpen(base.data.session, now) : false;
 
+  // Automatically enable manual marking controls when viewing a past/closed session
+  useEffect(() => {
+    if (base.data && !isOpen(base.data.session, Date.now())) {
+      setOverrideActive(true);
+    }
+  }, [base.data]);
+
   const refreshAttendance = useCallback(() => {
     void attendance.reload({ silent: true });
   }, [attendance]);
@@ -93,6 +106,13 @@ export default function LiveSessionPage() {
   usePolling(refreshAttendance, 5_000, live);
 
   const updateSession = (s: Session) => base.setData((prev) => (prev ? { ...prev, session: s } : prev));
+
+  const changeWeek = useAction(async (nextWeek: number) => {
+    if (!base.data || nextWeek === base.data.session.week) return;
+    const updated = await updateSessionWeek(sessionId, nextWeek);
+    updateSession(updated);
+    toast(`Moved session to Week ${nextWeek}`);
+  });
 
   const close = useAction(async () => updateSession(await closeSession(sessionId)));
   const extend = useAction(async (mins: number) => {
@@ -237,6 +257,13 @@ export default function LiveSessionPage() {
               <ZapIcon size={14} />
               <span>Batch Roll-Call</span>
             </Button>
+            <Link
+              to={`/rep/class/${klass.id}/new-session?mode=backfill&course=${encodeURIComponent(session.course_code)}`}
+              className="btn btn-secondary btn-sm"
+            >
+              <CalendarDaysIcon size={14} />
+              <span>Log Omitted Week</span>
+            </Link>
             <Button variant="secondary" size="sm" onClick={handleShareWhatsAppReport}>
               <MessageSquareIcon size={14} />
               <span>WhatsApp Report</span>
@@ -267,14 +294,32 @@ export default function LiveSessionPage() {
             <strong>{presentCount}</strong> <span className="muted">of {totalCount} present</span>
           </p>
         </div>
-        <div className="row">
+        <div className="row" style={{ flexWrap: 'wrap', gap: '0.5rem' }}>
+          <label className="row small muted" style={{ gap: '0.35rem' }}>
+            <span>Semester Week:</span>
+            <select
+              className="select"
+              style={{ width: 'auto', minHeight: '34px', padding: '0.25rem 0.55rem' }}
+              value={session.week}
+              disabled={changeWeek.pending}
+              onChange={(e) => void changeWeek.run(Number(e.target.value))}
+              aria-label="Change session week"
+            >
+              {SEMESTER_WEEKS.map((w) => (
+                <option key={w} value={w}>
+                  Week {w}
+                </option>
+              ))}
+              {session.week > 15 && <option value={session.week}>Week {session.week}</option>}
+            </select>
+          </label>
           <Button size="sm" variant="ghost" onClick={() => setOverrideActive((v) => !v)}>
-            {overrideActive ? 'Hide staff overrides' : 'Manual override'}
+            {overrideActive ? 'Hide manual controls' : 'Manual marking'}
           </Button>
           {live ? (
             <Badge tone="live">Open · {timeLeft(session.ends_at, now)}</Badge>
           ) : (
-            <Badge tone="muted">Closed</Badge>
+            <Badge tone="muted">Closed / Manual Marking Ready</Badge>
           )}
         </div>
       </section>

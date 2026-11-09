@@ -2902,3 +2902,152 @@ code,
     grid-template-columns: 1fr;
   }
 }
+
+
+/* --- 15-Week Semester Tracker & Omitted Week Backfill --------------------- */
+
+.semester-weeks-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(156px, 1fr));
+  gap: 0.65rem;
+}
+
+.semester-week-card {
+  border-radius: var(--radius);
+  padding: 0.75rem 0.8rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.35rem;
+  cursor: pointer;
+  transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
+}
+
+.semester-week-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-sm);
+}
+
+.semester-week-card.is-held {
+  background: linear-gradient(180deg, #f4fbf6 0%, #ebf7ef 100%);
+  border-color: #bfe2cb;
+}
+
+.semester-week-card.is-omitted {
+  background: var(--surface-subtle);
+  border-style: dashed;
+}
+
+.semester-week-card.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.week-pill-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.week-pill-btn {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--surface-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.48rem 0.35rem;
+  font: inherit;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.12rem;
+  transition: border-color 120ms ease, background-color 120ms ease, transform 100ms ease;
+}
+
+.week-pill-btn:hover {
+  border-color: var(--border-strong);
+  background: var(--surface);
+}
+
+.week-pill-btn.has-session {
+  background: #edf8f1;
+  border-color: #bfe2cb;
+  color: #16653b;
+}
+
+.week-pill-btn.is-selected {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(23, 108, 66, 0.24);
+}
+
+.week-pill-title {
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.week-pill-sub {
+  font-size: 0.66rem;
+  font-weight: 600;
+  opacity: 0.88;
+}
+
+.week-th-held {
+  background: #f0f9f3 !important;
+  color: #16653b !important;
+}
+
+.week-th-omitted {
+  color: var(--ink-muted);
+}
+
+.week-th-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.18rem;
+}
+
+.week-th-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.18rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  text-decoration: none;
+  line-height: 1.2;
+}
+
+.week-th-link.is-held {
+  background: #dcf2e4;
+  color: #156239;
+}
+
+.week-th-link.is-omitted {
+  background: var(--surface);
+  border: 1px dashed var(--border-strong);
+  color: var(--ink-secondary);
+}
+
+.week-th-link:hover {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+@media (max-width: 640px) {
+  .semester-weeks-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  .week-pill-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

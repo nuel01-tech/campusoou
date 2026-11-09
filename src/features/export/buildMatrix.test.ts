@@ -51,4 +51,39 @@ describe('buildMatrix', () => {
       [2, 'Zainab Ali', 'M2', 'A', '1/2', 1, 3, 33],
     ]);
   });
+
+  it('includes all 15 semester weeks when allSemesterWeeks is enabled and marks omitted weeks with —', () => {
+    const students = [student('s1', 'Adeola Cole', 'M1')];
+    const sessions = [session('w3', 3)];
+    const attendance = [present('w3', 's1')];
+
+    const m = buildMatrix(students, sessions, attendance, { allSemesterWeeks: true });
+
+    expect(m.weeks).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+    expect(m.heldWeeks.has(3)).toBe(true);
+    expect(m.heldWeeks.has(1)).toBe(false);
+    expect(m.rows[0]).toEqual([
+      1,
+      'Adeola Cole',
+      'M1',
+      '—', // W1
+      '—', // W2
+      'P', // W3
+      '—', // W4
+      '—', // W5
+      '—', // W6
+      '—', // W7
+      '—', // W8
+      '—', // W9
+      '—', // W10
+      '—', // W11
+      '—', // W12
+      '—', // W13
+      '—', // W14
+      '—', // W15
+      1,   // Attended
+      1,   // Held
+      100, // %
+    ]);
+  });
 });

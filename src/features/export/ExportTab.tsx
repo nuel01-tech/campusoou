@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAction, useAsync } from '@/hooks/useAsync';
 import { listStudents } from '@/services/roster';
 import { listAttendanceFor, listSessions } from '@/services/sessions';
-import { Button, EmptyState, ErrorAlert, PageLoader, SelectField } from '@/components/ui';
-import { DownloadIcon, FileSpreadsheetIcon } from '@/components/icons';
+import { Badge, Button, ErrorAlert, PageLoader, SelectField } from '@/components/ui';
+import { CheckCircle2Icon, DownloadIcon, FileSpreadsheetIcon, PlusIcon } from '@/components/icons';
 import { buildMatrix } from './buildMatrix';
 import { downloadMatrix, type ExportFormat } from './downloadMatrix';
 import type { ClassRoom } from '@/types';
@@ -24,6 +25,7 @@ export function ExportTab({ klass }: { klass: ClassRoom }) {
     [base.data],
   );
   const [picked, setPicked] = useState<string | null>(null);
+  const [showAll15Weeks, setShowAll15Weeks] = useState<boolean>(true);
   const course = picked ?? courses[0] ?? ALL;
 
   const sessions = useMemo(
@@ -39,8 +41,13 @@ export function ExportTab({ klass }: { klass: ClassRoom }) {
   );
 
   const matrix = useMemo(
-    () => (base.data && attendance.data ? buildMatrix(base.data.students, sessions, attendance.data) : null),
-    [base.data, sessions, attendance.data],
+    () =>
+      base.data && attendance.data
+        ? buildMatrix(base.data.students, sessions, attendance.data, {
+            allSemesterWeeks: showAll15Weeks,
+          })
+        : null,
+    [base.data, sessions, attendance.data, showAll15Weeks],
   );
 
   const download = useAction(async (format: ExportFormat) => {
@@ -51,26 +58,56 @@ export function ExportTab({ klass }: { klass: ClassRoom }) {
 
   if (base.loading) return <PageLoader />;
   if (base.error) return <ErrorAlert error={base.error} onRetry={() => base.reload()} />;
-  if (!base.data?.sessions.length) {
-    return (
-      <EmptyState title="Nothing to export yet">
-        Run at least one session and the vertical weekly attendance matrix will appear here.
-      </EmptyState>
-    );
-  }
+
+  const courseParam = course !== ALL ? `&course=${encodeURIComponent(course)}` : '';
 
   return (
     <div className="panel stack">
       <div className="export-bar">
-        <SelectField label="Course filter" value={course} onChange={(e) => setPicked(e.target.value)}>
-          {courses.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-          {courses.length > 1 && <option value={ALL}>All courses combined</option>}
-        </SelectField>
-        <div className="row">
+        <div className="row" style={{ gap: '0.75rem', flexWrap: 'wrap', flex: 1 }}>
+          <div style={{ minWidth: '210px' }}>
+            <SelectField
+              label="Course filter"
+              value={course}
+              onChange={(e) => setPicked(e.target.value)}
+            >
+              {courses.length === 0 && <option value={ALL}>All courses (no sessions yet)</option>}
+              {courses.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+              {courses.length > 1 && <option value={ALL}>All courses combined</option>}
+            </SelectField>
+          </div>
+
+          <div className="stack-xs">
+            <span className="field-label">Semester Week Columns</span>
+            <div className="segmented" role="tablist" aria-label="Week columns mode">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={showAll15Weeks}
+                className={showAll15Weeks ? 'is-active' : ''}
+                onClick={() => setShowAll15Weeks(true)}
+              >
+                All 15 Weeks (Week 1 – 15)
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={!showAll15Weeks}
+                className={!showAll15Weeks ? 'is-active' : ''}
+                onClick={() => setShowAll15Weeks(false)}
+                disabled={sessions.length === 0}
+              >
+                Recorded Weeks Only ({new Set(sessions.map((s) => s.week)).size})
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="row" style={{ flexWrap: 'wrap', gap: '0.5rem' }}>
           <Button
             onClick={() => download.run('xlsx')}
             disabled={!matrix || attendance.loading}
@@ -89,10 +126,18 @@ export function ExportTab({ klass }: { klass: ClassRoom }) {
           </Button>
         </div>
       </div>
-      <p className="muted small">
-        <strong>P</strong> = present, <strong>A</strong> = absent. Weeks with more than one session show attended/held,
-        e.g. <code>1/2</code>.
-      </p>
+
+      <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+        <p className="muted small">
+          <strong>P</strong> = present, <strong>A</strong> = absent, <strong>—</strong> = no session held yet in that week.
+          Click <strong>+ Mark</strong> under any omitted week column to manually record attendance for that past week.
+        </p>
+        {matrix && (
+          <Badge tone="ok">
+            {matrix.heldWeeks.size} of 15 Weeks Recorded
+          </Badge>
+        )}
+      </div>
 
       <ErrorAlert
         error={attendance.error ?? download.error}
@@ -100,17 +145,61 @@ export function ExportTab({ klass }: { klass: ClassRoom }) {
       />
 
       {attendance.loading ? (
-        <PageLoader label="Building sheet" />
+        <PageLoader label="Building 15-week attendance matrix" />
       ) : matrix ? (
         <div className="table-wrap sheet-wrap">
           <table className="table sheet">
             <thead>
               <tr>
-                {matrix.header.map((h, i) => (
-                  <th key={h} className={i === 1 ? 'sticky-col' : i > 2 ? 'num' : undefined}>
-                    {h}
-                  </th>
-                ))}
+                {matrix.header.map((h, i) => {
+                  const isWeekCol = i >= 3 && i < 3 + matrix.weeks.length;
+                  const weekNum = isWeekCol ? matrix.weeks[i - 3] : undefined;
+                  const isHeld = weekNum !== undefined && matrix.heldWeeks.has(weekNum);
+                  const weekSessions =
+                    weekNum !== undefined ? sessions.filter((s) => s.week === weekNum) : [];
+
+                  return (
+                    <th
+                      key={h}
+                      className={[
+                        i === 1 && 'sticky-col',
+                        i > 2 && 'num',
+                        isWeekCol && (isHeld ? 'week-th-held' : 'week-th-omitted'),
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
+                    >
+                      {isWeekCol && weekNum !== undefined ? (
+                        <div className="week-th-inner">
+                          <span className="row" style={{ gap: '0.25rem', justifyContent: 'flex-end' }}>
+                            <span>W{weekNum}</span>
+                            {isHeld && <CheckCircle2Icon size={11} />}
+                          </span>
+                          {isHeld && weekSessions.length === 1 ? (
+                            <Link
+                              to={`/rep/session/${weekSessions[0]!.id}?manual=1`}
+                              className="week-th-link is-held"
+                              title={`Open & edit Week ${weekNum} attendance`}
+                            >
+                              Edit
+                            </Link>
+                          ) : !isHeld ? (
+                            <Link
+                              to={`/rep/class/${klass.id}/new-session?week=${weekNum}&mode=backfill${courseParam}`}
+                              className="week-th-link is-omitted"
+                              title={`Manually mark omitted Week ${weekNum}`}
+                            >
+                              <PlusIcon size={10} />
+                              <span>Mark</span>
+                            </Link>
+                          ) : null}
+                        </div>
+                      ) : (
+                        h
+                      )}
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
@@ -125,6 +214,7 @@ export function ExportTab({ klass }: { klass: ClassRoom }) {
                         i > 2 && 'num',
                         cell === 'A' && 'cell-absent',
                         cell === 'P' && 'cell-present',
+                        cell === '—' && 'muted',
                       ]
                         .filter(Boolean)
                         .join(' ')}
@@ -134,6 +224,13 @@ export function ExportTab({ klass }: { klass: ClassRoom }) {
                   ))}
                 </tr>
               ))}
+              {matrix.rows.length === 0 && (
+                <tr>
+                  <td colSpan={matrix.header.length} className="muted center">
+                    No students on the class roster yet. Import or add students in the Student Roster tab.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
