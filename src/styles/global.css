@@ -3346,3 +3346,65 @@ a:hover { text-decoration: underline; }
   .table th, .table.sheet th { background: #f2f4f3 !important; color: #000 !important; }
   .table tbody tr:nth-child(even) td { background: #fff !important; }
 }
+
+
+/* ==========================================================================
+   iPhone / iOS Safari hardening (older Touch ID iPhones: SE, 6s, 7, 8, X-era)
+   ========================================================================== */
+
+/* Never let content widen the layout viewport (that is what makes Safari zoom out). */
+html { overflow-x: hidden; max-width: 100%; }
+body { max-width: 100%; position: relative; }
+img, svg, video, canvas, iframe { max-width: 100%; }
+.container, .saas-main, .saas-workspace, .vtabs-panel, .panel, .table-wrap { max-width: 100%; }
+.saas-layout { grid-template-columns: 248px minmax(0, 1fr); }
+@media (max-width: 1050px) { .saas-layout { grid-template-columns: 226px minmax(0, 1fr); } }
+@media (max-width: 900px) {
+  .saas-layout { grid-template-columns: minmax(0, 1fr); }
+  .vtabs-layout { grid-template-columns: minmax(0, 1fr); }
+}
+.table-wrap { -webkit-overflow-scrolling: touch; overflow-x: auto; }
+p, h1, h2, h3, h4, td, th, .badge, .brand-title { overflow-wrap: anywhere; }
+.nowrap, .btn { overflow-wrap: normal; }
+
+/* iOS < 15.4 has no dvh units: give every full-height layout a vh fallback. */
+@supports not (height: 100dvh) {
+  body, .shell, .saas-layout, .saas-workspace { min-height: 100vh; }
+  .saas-sidebar { height: 100vh; }
+  .saas-sidebar { height: -webkit-fill-available; }
+}
+
+/* iOS zooms the whole page when a field with text < 16px is focused. Stop that. */
+@supports (-webkit-touch-callout: none) {
+  input, select, textarea, .input, .select, .textarea,
+  .cmd-input, .saas-selector-select, .field input, .field select, .field textarea {
+    font-size: 16px !important;
+  }
+  button, a, .btn, .vtab-item, .saas-mobile-tab { touch-action: manipulation; }
+}
+
+/* Notch / home-indicator safe areas (viewport-fit=cover). */
+.topbar, .saas-topbar { padding-top: env(safe-area-inset-top, 0px); }
+.saas-topbar { height: calc(3.45rem + env(safe-area-inset-top, 0px)); }
+.container, .saas-main > .container {
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+.saas-mobile-bottomnav { padding-bottom: calc(0.25rem + env(safe-area-inset-bottom, 0px)); }
+
+/* Phones: compact chrome so nothing is squeezed. */
+@media (max-width: 480px) {
+  html { font-size: 15px; }
+  .topbar-inner { flex-wrap: wrap; height: auto; padding: 0.5rem 0; }
+  .topbar-nav { margin-left: 0; flex-wrap: wrap; }
+  .landing-hero { padding: 1.25rem 1rem; }
+  .landing-hero h1 { font-size: 1.6rem; }
+  .btn-lg { height: 3rem; }
+  .btn { max-width: 100%; white-space: normal; text-align: center; }
+  .page-header-row, .section-head, .toolbar, .export-bar { flex-direction: column; align-items: stretch; }
+  .grid-2, .landing-grid, .landing-grid-3, .class-cards-grid, .steps-grid { grid-template-columns: minmax(0, 1fr); }
+  .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cmd-modal { width: calc(100vw - 1.5rem); max-width: 100%; }
+  .table th, .table td { padding: 0.5rem 0.55rem; font-size: 0.8rem; }
+}
+@media (max-width: 340px) { .kpi-grid { grid-template-columns: minmax(0, 1fr); } }
