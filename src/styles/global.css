@@ -5,63 +5,65 @@
    ========================================================================== */
 
 :root {
-  /* Surface & Background Tokens (Figma Reference Palette) */
-  --bg: #f5f7f6;
+  /* Reference-style palette: dark charcoal chrome, bright green accent, flat light-gray surfaces */
+  --nav-dark: #282a35;
+  --nav-dark-2: #3a3d4d;
+  --bg: #ffffff;
   --surface: #ffffff;
-  --surface-subtle: #f7f9f8;
-  --surface-elevated: #fafbfa;
+  --surface-subtle: #f1f1f1;
+  --surface-elevated: #e7e9eb;
 
   /* Ink / Typography Tokens */
-  --ink: #18251f;
-  --ink-secondary: #344239;
-  --ink-muted: #69776f;
-  --ink-subtle: #84928a;
+  --ink: #000000;
+  --ink-secondary: #282a35;
+  --ink-muted: #555555;
+  --ink-subtle: #777777;
 
   /* Borders */
-  --border: #e9eeeb;
-  --border-subtle: #f0f3f1;
-  --border-strong: #cbd9ce;
+  --border: #d4d4d4;
+  --border-subtle: #e7e9eb;
+  --border-strong: #b5b8bd;
 
   /* Primary Brand Green */
-  --accent: #176d43;
-  --accent-hover: #115b37;
+  --accent: #04aa6d;
+  --accent-hover: #059862;
   --accent-ink: #ffffff;
-  --accent-soft: #eaf4ed;
-  --accent-border: #cde2d4;
-  --accent-indicator: #218452;
+  --accent-soft: #ddffdd;
+  --accent-border: #a5e3c4;
+  --accent-indicator: #04aa6d;
 
   /* Semantic Status Tokens */
-  --ok: #2b8050;
-  --ok-bg: #eaf5ed;
-  --ok-dot: #50a875;
+  --ok: #046a42;
+  --ok-bg: #ddffdd;
+  --ok-dot: #04aa6d;
 
-  --warn: #a57927;
-  --warn-bg: #fbf3e3;
-  --warn-dot: #d9a23e;
+  --warn: #7a5b00;
+  --warn-bg: #ffffcc;
+  --warn-dot: #ffc107;
 
-  --danger: #bc5d51;
-  --danger-bg: #f9eae8;
-  --danger-dot: #d7796b;
+  --danger: #c0262d;
+  --danger-bg: #ffdddd;
+  --danger-dot: #f44336;
 
-  --info: #4b76b7;
-  --info-bg: #e8f0fb;
-  --info-dot: #7195cc;
+  --info: #0b5a99;
+  --info-bg: #e7f3fe;
+  --info-dot: #2196f3;
 
-  --purple: #8060b4;
-  --purple-bg: #f0eafa;
-  --purple-dot: #9478c5;
+  --purple: #6a3fa0;
+  --purple-bg: #f0e8fa;
+  --purple-dot: #9c27b0;
 
-  /* Geometry & Typography */
-  --radius-sm: 6px;
-  --radius: 9px;
-  --radius-lg: 12px;
-  --shadow-sm: 0 1px 2px rgba(18, 36, 26, 0.04);
-  --shadow-md: 0 8px 24px rgba(18, 36, 26, 0.08);
-  --shadow-lg: 0 18px 42px rgba(18, 36, 26, 0.16);
+  /* Geometry & Typography: flat, near-square corners, almost no shadow */
+  --radius-sm: 3px;
+  --radius: 5px;
+  --radius-lg: 6px;
+  --shadow-sm: none;
+  --shadow-md: 0 2px 6px rgba(0, 0, 0, 0.12);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.22);
 
-  --font-display: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-sans: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  --font-display: 'Segoe UI', Arial, sans-serif;
+  --font-sans: 'Segoe UI', Arial, sans-serif;
+  --font-mono: Consolas, 'Courier New', monospace;
 }
 
 *,
@@ -3145,4 +3147,202 @@ code,
     background: #f2f4f3 !important;
     font-weight: 700 !important;
   }
+}
+
+
+/* ==========================================================================
+   Reference theme layer: flat "tutorial-site" look
+   Dark charcoal top bar, light-gray sidebar with green active item,
+   square green buttons, green-header striped tables, dark footer.
+   (Colours/layout language only. CampusPulse content & branding unchanged.)
+   ========================================================================== */
+
+html, body { background: #ffffff; font-size: 16px; }
+
+h1, h2, h3, h4 { font-weight: 600; letter-spacing: 0; color: #000; }
+h1 { font-size: clamp(1.6rem, 3vw, 2.4rem); font-weight: 600; }
+h2 { font-size: 1.35rem; font-weight: 600; }
+h3 { font-size: 1.1rem; font-weight: 600; }
+a { text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.eyebrow {
+  color: var(--accent);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 0.78rem;
+}
+
+/* --- Dark charcoal top bars (public + workspace) --------------------------- */
+.topbar,
+.saas-topbar {
+  background: var(--nav-dark);
+  backdrop-filter: none;
+  border-bottom: 0;
+  color: #fff;
+  box-shadow: none;
+}
+.topbar .brand, .topbar .brand:hover,
+.topbar .brand-title,
+.topbar .topbar-user,
+.saas-topbar,
+.saas-breadcrumbs,
+.saas-breadcrumb-current { color: #fff; }
+.brand-icon { background: var(--accent); color: #fff; border-radius: 3px; }
+.brand-sub { color: #b9bcc9; }
+.topbar-link { color: #e7e9eb; border-radius: 0; font-weight: 500; }
+.topbar-link:hover { background: var(--nav-dark-2); color: #fff; text-decoration: none; }
+.topbar-link.is-active { background: var(--accent); color: #fff; }
+.saas-breadcrumb-sep { color: #8b8fa3; }
+.saas-status-pill { background: var(--nav-dark-2); color: #fff; border-radius: 3px; }
+.saas-top-avatar { background: var(--accent); color: #fff; }
+.saas-menu-btn { background: var(--nav-dark-2); color: #fff; border-color: transparent; border-radius: 3px; }
+
+/* --- Light-gray sidebar, green active link --------------------------------- */
+.saas-sidebar { background: #e7e9eb; border-right: 1px solid #d4d4d4; color: #000; }
+.saas-sidebar-top { background: var(--nav-dark); border-bottom: 0; }
+.saas-brand, .saas-brand:hover, .saas-brand-name { color: #fff; }
+.saas-brand-mark { background: var(--accent); color: #fff; border-radius: 3px; }
+.saas-brand-role { color: #b9bcc9; }
+.saas-cmd-trigger { background: var(--nav-dark-2); border-color: transparent; color: #d9dbe3; border-radius: 3px; }
+.saas-cmd-trigger:hover { background: #4a4e61; color: #fff; border-color: transparent; }
+.saas-cmd-trigger kbd { background: var(--nav-dark); border-color: #555a70; color: #d9dbe3; }
+.saas-selector-select { border-radius: 3px; background: #fff; }
+.saas-nav-title { color: #555; font-weight: 700; }
+.saas-vnav-link { color: #000; border-radius: 0; font-weight: 500; padding: 0.6rem 0.85rem; }
+.saas-vnav-link:hover { background: #ccc; color: #000; text-decoration: none; }
+.saas-vnav-link.is-active { background: var(--accent); color: #fff; font-weight: 600; }
+.saas-vnav-badge { background: #fff; color: var(--ok); border-radius: 3px; }
+.saas-vnav-link.is-active .saas-vnav-badge { background: #fff; color: var(--accent); }
+.saas-sidebar-footer { background: #e7e9eb; border-top: 1px solid #d4d4d4; }
+.saas-help-card { background: #fff; border: 1px solid #d4d4d4; border-radius: 3px; }
+.saas-avatar { background: var(--accent); color: #fff; }
+.saas-signout-icon-btn { border-radius: 3px; background: #fff; }
+
+/* --- Page canvas ------------------------------------------------------------ */
+.saas-layout, .saas-workspace { background: #ffffff; }
+.saas-main { background: #ffffff; }
+
+/* --- Panels / cards: flat, light-gray, thin border -------------------------- */
+.panel,
+.kpi-card,
+.class-card,
+.checkin-card,
+.semester-week-card,
+.saas-help-card {
+  background: #f1f1f1;
+  border: 1px solid #e0e0e0;
+  border-radius: 5px;
+  box-shadow: none;
+}
+.panel { background: #ffffff; border-color: #d4d4d4; }
+.kpi-card { border-left: 4px solid var(--accent); background: #f1f1f1; }
+.kpi-value { font-family: var(--font-display); font-weight: 600; }
+.class-card:hover { border-color: var(--accent); box-shadow: none; }
+.semester-week-card.is-held { background: var(--accent-soft); border-color: var(--accent-border); }
+.filter-bar { background: #f1f1f1; border-radius: 5px; }
+
+/* --- Buttons: square green primary, gray secondary -------------------------- */
+.btn { border-radius: 4px; font-weight: 500; }
+.btn-primary { background: var(--accent); color: #fff; box-shadow: none; }
+.btn-primary:hover:not(:disabled) { background: var(--accent-hover); color: #fff; text-decoration: none; }
+.btn-secondary { background: #e7e9eb; color: #000; border-color: #e7e9eb; }
+.btn-secondary:hover:not(:disabled) { background: #d4d6d9; border-color: #d4d6d9; color: #000; text-decoration: none; }
+.btn-ghost { color: #282a35; }
+.btn-ghost:hover:not(:disabled) { background: #e7e9eb; }
+.btn-danger { background: #f44336; }
+.btn-danger:hover:not(:disabled) { background: #d8372b; }
+
+/* --- Form controls ----------------------------------------------------------- */
+.field input, .field select, .field textarea, .input, .select, .textarea {
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+  color: #000;
+}
+.field input:focus, .field select:focus, .field textarea:focus,
+.input:focus, .select:focus, .textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
+  border-color: var(--accent);
+  box-shadow: none;
+}
+.field-label, .field > label { font-weight: 600; color: #282a35; }
+
+/* --- Tables: green header, zebra rows ---------------------------------------- */
+.table-wrap { border: 1px solid #d4d4d4; border-radius: 0; background: #fff; box-shadow: none; }
+.table th { background: var(--accent); color: #fff; font-weight: 600; text-transform: none; letter-spacing: 0; border-bottom: 0; }
+.table td { border-bottom: 1px solid #ddd; color: #000; }
+.table tbody tr:nth-child(even) td { background: #f2f2f2; }
+.table tbody tr:hover td { background: #ddd; }
+.table.sheet th.week-th-held, .week-th-held { background: #059862 !important; color: #fff !important; }
+.week-th-omitted { color: #fff; }
+.week-th-link.is-held { background: #fff; color: var(--accent); }
+.week-th-link.is-omitted { background: #282a35; color: #fff; border: 0; }
+
+/* --- Tabs (vertical + segmented) ---------------------------------------------- */
+.vtabs { background: #e7e9eb; border: 1px solid #d4d4d4; border-radius: 0; box-shadow: none; padding: 0; gap: 0; }
+.vtab-item { border-radius: 0; border: 0; padding: 0.75rem 0.9rem; }
+.vtab-item:hover { background: #ccc; }
+.vtab-item.is-active { background: var(--accent); border: 0; box-shadow: none; }
+.vtab-item.is-active .vtab-label,
+.vtab-item.is-active .vtab-desc { color: #fff; }
+.vtab-label { font-weight: 600; }
+.vtab-badge { background: #fff; color: #282a35; border-radius: 3px; }
+.vtab-badge.is-active { background: #fff; color: var(--accent); }
+.segmented { background: #e7e9eb; border-radius: 4px; padding: 2px; }
+.segmented button { border-radius: 3px; }
+.segmented button.is-active, .segmented button[aria-selected='true'] { background: var(--accent); color: #fff; box-shadow: none; }
+
+/* --- Badges & status: square, flat -------------------------------------------- */
+.badge { border-radius: 3px; font-weight: 600; }
+.badge-neutral { background: #e7e9eb; color: #282a35; }
+.badge-live { background: var(--accent); color: #fff; }
+
+/* --- Alerts: coloured left bar, W3-style notes -------------------------------- */
+.alert { border-radius: 0; border: 0; border-left: 6px solid var(--accent); background: var(--accent-soft); color: #000; }
+.alert-warning, .alert-warn { border-left-color: #ffc107; background: #ffffcc; }
+.alert-error, .alert-danger { border-left-color: #f44336; background: #ffdddd; }
+.alert-info { border-left-color: #2196f3; background: #e7f3fe; }
+
+/* --- Modals / command palette --------------------------------------------------- */
+.cmd-backdrop { background: rgba(0, 0, 0, 0.6); backdrop-filter: none; }
+.cmd-modal { border-radius: 5px; border: 0; }
+.cmd-item:hover { background: var(--accent-soft); }
+
+/* --- Landing: dark hero with green call-to-action, dark footer ------------------- */
+.landing-hero {
+  background: var(--nav-dark);
+  color: #fff;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.landing-hero h1, .landing-hero h2 { color: #fff; }
+.landing-hero p, .landing-intro p { color: #d9dbe3; }
+.landing-hero .btn-secondary { background: #fff; color: #000; border-color: #fff; }
+.landing-hero .btn-secondary:hover:not(:disabled) { background: #e7e9eb; }
+.landing-grid > .panel, .landing-grid-3 > .panel { background: #f1f1f1; border: 0; border-top: 4px solid var(--accent); border-radius: 0; }
+.landing-footer {
+  background: var(--nav-dark);
+  color: #d9dbe3;
+  border-top: 0;
+  padding: 1.5rem 1rem;
+}
+.landing-footer a { color: #fff; }
+
+/* --- Mobile bottom navigation: dark bar, green active tab ------------------------ */
+@media (max-width: 900px) {
+  .saas-mobile-bottomnav { background: var(--nav-dark); border-top: 0; backdrop-filter: none; box-shadow: none; }
+  .saas-mobile-tab { color: #d9dbe3; border-radius: 0; }
+  .saas-mobile-tab.is-active { background: var(--accent); color: #fff; }
+  .vtabs { background: #e7e9eb; }
+  .vtab-item.is-active { box-shadow: none; }
+}
+
+/* --- Print: keep the register clean (override green table head) ------------------ */
+@media print {
+  .table th, .table.sheet th { background: #f2f4f3 !important; color: #000 !important; }
+  .table tbody tr:nth-child(even) td { background: #fff !important; }
 }
