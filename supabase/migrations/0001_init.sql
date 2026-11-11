@@ -242,6 +242,38 @@ as $$
      and exists (select 1 from classes where id = p_class_id and owner_id = auth.uid());
 $$;
 
+create or replace function public.is_session_owner(p_session_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.is_active_rep()
+     and exists (
+       select 1
+         from public.sessions s
+         join public.classes c on c.id = s.class_id
+        where s.id = p_session_id
+          and c.owner_id = auth.uid()
+     );
+$$;
+
+create or replace function public.is_my_student_id(p_student_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+      from public.students st
+     where st.id = p_student_id
+       and st.user_id = auth.uid()
+  );
+$$;
+
 create or replace function public.my_student_class_id()
 returns uuid
 language sql
@@ -719,42 +751,34 @@ create policy sessions_owner_all on public.sessions
 drop policy if exists sessions_student_read on public.sessions;
 create policy sessions_student_read on public.sessions
   for select to authenticated
-  using (
-    exists (
-      select 1
-        from public.attendance a
-        join public.students st on st.id = a.student_id
-       where a.session_id = sessions.id
-         and st.user_id = auth.uid()
-    )
-  );
+  using (class_id = public.my_student_class_id());
 
 -- attendance (students never write directly; see check_in())
 drop policy if exists attendance_owner_read on public.attendance;
 create policy attendance_owner_read on public.attendance
   for select to authenticated
-  using (exists (select 1 from sessions s where s.id = session_id and public.is_class_owner(s.class_id)));
+  using (public.is_session_owner(session_id));
 
 drop policy if exists attendance_owner_insert on public.attendance;
 create policy attendance_owner_insert on public.attendance
   for insert to authenticated
-  with check (exists (select 1 from sessions s where s.id = session_id and public.is_class_owner(s.class_id)));
+  with check (public.is_session_owner(session_id));
 
 drop policy if exists attendance_owner_update on public.attendance;
 create policy attendance_owner_update on public.attendance
   for update to authenticated
-  using (exists (select 1 from sessions s where s.id = session_id and public.is_class_owner(s.class_id)))
-  with check (exists (select 1 from sessions s where s.id = session_id and public.is_class_owner(s.class_id)));
+  using (public.is_session_owner(session_id))
+  with check (public.is_session_owner(session_id));
 
 drop policy if exists attendance_owner_delete on public.attendance;
 create policy attendance_owner_delete on public.attendance
   for delete to authenticated
-  using (exists (select 1 from sessions s where s.id = session_id and public.is_class_owner(s.class_id)));
+  using (public.is_session_owner(session_id));
 
 drop policy if exists attendance_self_read on public.attendance;
 create policy attendance_self_read on public.attendance
   for select to authenticated
-  using (exists (select 1 from students st where st.id = student_id and st.user_id = auth.uid()));
+  using (public.is_my_student_id(student_id));
 
 -- -----------------------------------------------------------------------------
 -- RPC: Super Admin bootstrap & management

@@ -117,26 +117,76 @@ begin
 end;
 $$;
 
-drop policy if exists attendance_owner_update on public.attendance;
-create policy attendance_owner_update on public.attendance
-  for update to authenticated
-  using (exists (select 1 from sessions s where s.id = session_id and public.is_class_owner(s.class_id)))
-  with check (exists (select 1 from sessions s where s.id = session_id and public.is_class_owner(s.class_id)));
+-- Fix RLS Infinite Recursion between public.sessions and public.attendance
+-- by using SECURITY DEFINER helpers that never trigger cross-table policy loops.
+create or replace function public.is_session_owner(p_session_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.is_active_rep()
+     and exists (
+       select 1
+         from public.sessions s
+         join public.classes c on c.id = s.class_id
+        where s.id = p_session_id
+          and c.owner_id = auth.uid()
+     );
+$$;
 
--- Lock direct SELECT on public.sessions for students who haven't checked in yet,
--- so a hacker in DevTools Console cannot query session lat/lng or security_code!
+create or replace function public.is_my_student_id(p_student_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+      from public.students st
+     where st.id = p_student_id
+       and st.user_id = auth.uid()
+  );
+$$;
+
+drop policy if exists sessions_owner_all on public.sessions;
+create policy sessions_owner_all on public.sessions
+  for all to authenticated
+  using (public.is_class_owner(class_id))
+  with check (public.is_class_owner(class_id));
+
 drop policy if exists sessions_student_read on public.sessions;
 create policy sessions_student_read on public.sessions
   for select to authenticated
-  using (
-    exists (
-      select 1
-        from public.attendance a
-        join public.students st on st.id = a.student_id
-       where a.session_id = sessions.id
-         and st.user_id = auth.uid()
-    )
-  );
+  using (class_id = public.my_student_class_id());
+
+drop policy if exists attendance_owner_read on public.attendance;
+create policy attendance_owner_read on public.attendance
+  for select to authenticated
+  using (public.is_session_owner(session_id));
+
+drop policy if exists attendance_owner_insert on public.attendance;
+create policy attendance_owner_insert on public.attendance
+  for insert to authenticated
+  with check (public.is_session_owner(session_id));
+
+drop policy if exists attendance_owner_update on public.attendance;
+create policy attendance_owner_update on public.attendance
+  for update to authenticated
+  using (public.is_session_owner(session_id))
+  with check (public.is_session_owner(session_id));
+
+drop policy if exists attendance_owner_delete on public.attendance;
+create policy attendance_owner_delete on public.attendance
+  for delete to authenticated
+  using (public.is_session_owner(session_id));
+
+drop policy if exists attendance_self_read on public.attendance;
+create policy attendance_self_read on public.attendance
+  for select to authenticated
+  using (public.is_my_student_id(student_id));
 
 -- 2. Coordinate-masked open sessions for students (hides lat/lng & security_code from DevTools Network tab)
 drop function if exists public.list_open_student_sessions(uuid);
