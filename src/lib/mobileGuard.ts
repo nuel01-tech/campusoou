@@ -65,8 +65,59 @@ function clampOverflowingElements(): void {
   });
 }
 
+/**
+ * Locks pinch-zoom, double-tap zoom and Ctrl+wheel / Ctrl +/- zoom.
+ * The viewport meta tag handles Android Chrome; iOS Safari ignores `user-scalable=no`,
+ * so gesture events are cancelled in script as well.
+ */
+function initZoomLock(): void {
+  const opts = { passive: false } as AddEventListenerOptions;
+
+  // iOS Safari pinch gestures
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach((type) =>
+    document.addEventListener(type, (e) => e.preventDefault(), opts),
+  );
+
+  // Any multi-finger touch (pinch) on every browser
+  document.addEventListener(
+    'touchmove',
+    (e) => {
+      if (e.touches.length > 1) e.preventDefault();
+    },
+    opts,
+  );
+
+  // Double-tap zoom
+  let lastTap = 0;
+  document.addEventListener(
+    'touchend',
+    (e) => {
+      const now = Date.now();
+      if (now - lastTap < 300) e.preventDefault();
+      lastTap = now;
+    },
+    opts,
+  );
+
+  // Desktop: Ctrl/Cmd + mouse wheel and Ctrl/Cmd + (+ - 0)
+  window.addEventListener(
+    'wheel',
+    (e) => {
+      if (e.ctrlKey || e.metaKey) e.preventDefault();
+    },
+    opts,
+  );
+  window.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && ['+', '=', '-', '_', '0'].includes(e.key)) {
+      e.preventDefault();
+    }
+  });
+}
+
 export function initMobileGuard(): void {
   if (typeof window === 'undefined') return;
+
+  initZoomLock();
 
   const run = () => {
     if (isForcedDesktopMode()) showDesktopModeBanner();

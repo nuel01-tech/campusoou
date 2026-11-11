@@ -3408,3 +3408,18 @@ p, h1, h2, h3, h4, td, th, .badge, .brand-title { overflow-wrap: anywhere; }
   .table th, .table td { padding: 0.5rem 0.55rem; font-size: 0.8rem; }
 }
 @media (max-width: 340px) { .kpi-grid { grid-template-columns: minmax(0, 1fr); } }
+
+
+/* ==========================================================================
+   Zoom lock + fixed-width page: nothing can overflow when zoomed out
+   ========================================================================== */
+html, body {
+  width: 100%;
+  min-width: 0;
+  touch-action: pan-x pan-y;          /* scroll only: no pinch / double-tap zoom */
+  overscroll-behavior-x: none;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+#root { width: 100%; max-width: 100vw; overflow-x: hidden; }
+input, select, textarea { touch-action: manipulation; }
