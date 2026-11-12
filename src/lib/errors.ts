@@ -98,6 +98,8 @@ const MESSAGES: Record<string, string | MessageFor> = {
   GEO_DENIED:
     'Location permission is blocked. Allow location for this site in your browser settings, then try again.',
   GEO_UNAVAILABLE: 'Your phone could not get a location. Turn on location/GPS and try again.',
+  GEO_LOW_ACCURACY: (accuracy) =>
+    `Your phone reported a location uncertainty of ±${accuracy}m, which is too wide for attendance verification. On Android, set CampusPulse/Roll Call location permission to Allow all the time or Allow only while using, enable Use precise location, turn on Google Location Accuracy, then retry outdoors or near an open window. Keep the app open while GPS settles.`,
   GEO_TIMEOUT: 'Getting your location took too long. Move to an open area and try again.',
   GEO_INSECURE: 'Location only works on a secure (https) link.',
 
