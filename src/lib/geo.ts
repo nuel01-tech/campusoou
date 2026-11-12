@@ -17,8 +17,10 @@ export function distanceMeters(a: { lat: number; lng: number }, b: { lat: number
 interface LocateOptions {
   /** Keep watching until accuracy is at or below this many metres. */
   targetAccuracy?: number;
-  /** Give up and return the best fix seen after this many ms. */
+  /** Give up after this many ms without a sufficiently accurate fix. */
   timeoutMs?: number;
+  /** Never return a fix whose reported uncertainty exceeds this many metres. */
+  maxAccuracy?: number;
 }
 
 /**
@@ -89,7 +91,7 @@ function isSyntheticPosition(pos: GeolocationPosition): boolean {
  * Gets the current position. Phones often return a coarse fix first and then
  * refine it, so we watch briefly and return the most accurate reading.
  */
-export function locate({ targetAccuracy = 30, timeoutMs = 12_000 }: LocateOptions = {}): Promise<GeoFix> {
+export function locate({ targetAccuracy = 30, timeoutMs = 25_000, maxAccuracy = 150 }: LocateOptions = {}): Promise<GeoFix> {
   return new Promise((resolve, reject) => {
     if (!window.isSecureContext) return reject(appError('GEO_INSECURE'));
     if (!('geolocation' in navigator)) return reject(appError('GEO_UNSUPPORTED'));
@@ -116,8 +118,9 @@ export function locate({ targetAccuracy = 30, timeoutMs = 12_000 }: LocateOption
         if (fix.accuracy <= targetAccuracy) finish(() => resolve(fix));
       },
       (err) => {
-        // If we already have something usable, prefer it over an error.
-        if (best) return finish(() => resolve(best!));
+        // A coarse network/cell-tower fix is not safe for attendance geofencing.
+        if (best && best.accuracy <= maxAccuracy) return finish(() => resolve(best!));
+        if (best) return finish(() => reject(appError('GEO_LOW_ACCURACY', String(Math.round(best!.accuracy)))));
         const code =
           err.code === err.PERMISSION_DENIED
             ? 'GEO_DENIED'
@@ -130,7 +133,13 @@ export function locate({ targetAccuracy = 30, timeoutMs = 12_000 }: LocateOption
     );
 
     const timer = setTimeout(() => {
-      finish(() => (best ? resolve(best) : reject(appError('GEO_TIMEOUT'))));
+      if (best && best.accuracy <= maxAccuracy) {
+        finish(() => resolve(best!));
+      } else if (best) {
+        finish(() => reject(appError('GEO_LOW_ACCURACY', String(Math.round(best!.accuracy)))));
+      } else {
+        finish(() => reject(appError('GEO_TIMEOUT')));
+      }
     }, timeoutMs);
   });
 }
