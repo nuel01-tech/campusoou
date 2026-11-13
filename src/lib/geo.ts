@@ -72,7 +72,7 @@ function isSyntheticPosition(pos: GeolocationPosition): boolean {
  * Gets the current position. Phones often return a coarse fix first and then
  * refine it, so we watch briefly and return the most accurate reading.
  */
-export function locate({ targetAccuracy = 30, timeoutMs = 45_000, maxAccuracy = 150 }: LocateOptions = {}): Promise<GeoFix> {
+export function locate({ targetAccuracy = 50, timeoutMs = 60_000, maxAccuracy = 150 }: LocateOptions = {}): Promise<GeoFix> {
   return new Promise((resolve, reject) => {
     if (!window.isSecureContext) return reject(appError('GEO_INSECURE'));
     if (!('geolocation' in navigator)) return reject(appError('GEO_UNSUPPORTED'));
@@ -113,7 +113,13 @@ export function locate({ targetAccuracy = 30, timeoutMs = 45_000, maxAccuracy = 
           finish(() => reject(appError('GEO_DENIED')));
         }
       },
-      { enableHighAccuracy: true, maximumAge: 0 },
+      {
+        enableHighAccuracy: true,
+        // A very recent browser fix is still useful; forcing maximumAge: 0
+        // can make Android Chrome wait for a brand-new GPS acquisition even
+        // when the phone already has a reliable location from another app.
+        maximumAge: 10_000,
+      },
     );
 
     timer = setTimeout(() => {
