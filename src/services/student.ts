@@ -136,21 +136,10 @@ export async function checkIn(
     p_security_code: null,
   });
 
-  if (error) {
-    const msg = String((error as { message?: string }).message ?? '');
-    if (/could not find the function|PGRST202/i.test(msg)) {
-      const fallback = await supabase.rpc('check_in', {
-        p_session_id: sessionId,
-        p_lat: fix.lat,
-        p_lng: fix.lng,
-        p_accuracy: fix.accuracy,
-        p_passkey_id: passkeyId,
-        p_device_token: deviceToken,
-      });
-      if (fallback.error) throw toAppError(fallback.error);
-      return fallback.data as Attendance;
-    }
-    throw toAppError(error);
-  }
+  // Never retry without p_webauthn_proof. The database requires the proof and
+  // accepting a reduced-argument retry only converts a schema-cache problem into
+  // a misleading WEBAUTHN_TAMPERED error. Surface PGRST202 as DB_NOT_MIGRATED so
+  // the deployed Supabase function signature can be brought up to date safely.
+  if (error) throw toAppError(error);
   return data as Attendance;
 }
