@@ -1,4 +1,4 @@
-import { appError } from './errors';
+﻿import { appError } from './errors';
 import type { GeoFix } from '@/types';
 
 const EARTH_RADIUS_M = 6_371_000;
@@ -72,7 +72,7 @@ function isSyntheticPosition(pos: GeolocationPosition): boolean {
  * Gets the current position. Phones often return a coarse fix first and then
  * refine it, so we watch briefly and return the most accurate reading.
  */
-export function locate({ targetAccuracy = 50, timeoutMs = 60_000, maxAccuracy = 150 }: LocateOptions = {}): Promise<GeoFix> {
+export function locate({ targetAccuracy = 50, timeoutMs = 60_000, maxAccuracy = 250 }: LocateOptions = {}): Promise<GeoFix> {
   return new Promise((resolve, reject) => {
     if (!window.isSecureContext) return reject(appError('GEO_INSECURE'));
     if (!('geolocation' in navigator)) return reject(appError('GEO_UNSUPPORTED'));

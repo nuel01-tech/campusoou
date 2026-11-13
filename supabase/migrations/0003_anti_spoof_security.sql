@@ -1,5 +1,5 @@
--- =============================================================================
--- CampusPulse — Anti-Spoofing, Anti-VPN, Coordinate Masking & Privilege Lock
+﻿-- =============================================================================
+-- CampusPulse â€” Anti-Spoofing, Anti-VPN, Coordinate Masking & Privilege Lock
 -- Run this in your Supabase SQL Editor to enforce all database-level protections.
 -- =============================================================================
 
@@ -340,7 +340,7 @@ begin
     raise exception 'ALREADY_CHECKED_IN';
   end if;
 
-  if p_accuracy is null or p_accuracy <= 0 or p_accuracy > 150 then
+  if p_accuracy is null or p_accuracy <= 0 or p_accuracy > 250 then
     raise exception 'LOW_ACCURACY';
   end if;
 

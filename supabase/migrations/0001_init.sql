@@ -1,5 +1,5 @@
--- =============================================================================
--- CampusPulse — database schema (idempotent: safe to run on a new or existing DB)
+﻿-- =============================================================================
+-- CampusPulse â€” database schema (idempotent: safe to run on a new or existing DB)
 --
 -- Run this in the Supabase SQL Editor.
 --
@@ -1545,7 +1545,7 @@ begin
     raise exception 'ALREADY_CHECKED_IN';
   end if;
 
-  if p_accuracy is null or p_accuracy <= 0 or p_accuracy > 150 then
+  if p_accuracy is null or p_accuracy <= 0 or p_accuracy > 250 then
     raise exception 'LOW_ACCURACY';
   end if;
 
