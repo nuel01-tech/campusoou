@@ -89,13 +89,25 @@ export function locate({
     let settled = false;
     let watchId: number | undefined;
     let timer: ReturnType<typeof setTimeout>;
+    let nudgeTimer: ReturnType<typeof setTimeout> | undefined;
 
     const finish = (fn: () => void) => {
       if (settled) return;
       settled = true;
       if (watchId !== undefined) navigator.geolocation.clearWatch(watchId);
       clearTimeout(timer);
+      if (nudgeTimer !== undefined) clearTimeout(nudgeTimer);
       fn();
+    };
+
+    const onPosition = (pos: GeolocationPosition) => {
+      if (isSyntheticPosition(pos)) {
+        return finish(() => reject(appError('GEO_SPOOF_DETECTED')));
+      }
+      const fix = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
+      if (!best || fix.accuracy < best.accuracy) best = fix;
+      onProgress?.(Math.round(best.accuracy));
+      if (fix.accuracy <= targetAccuracy) finish(() => resolve(fix));
     };
 
     // Do not set GeolocationPositionOptions.timeout here. On Android Chrome,
@@ -103,17 +115,7 @@ export function locate({
     // produces its first fix and prematurely ends a watch that could still work.
     // The independent timer below is the single overall deadline.
     watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        if (isSyntheticPosition(pos)) {
-          return finish(() => reject(appError('GEO_SPOOF_DETECTED')));
-        }
-        const fix = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
-        if (!best || fix.accuracy < best.accuracy) best = fix;
-        onProgress?.(Math.round(best.accuracy));
-        // Resolve as soon as the reading is good enough for attendance (<= targetAccuracy),
-        // or as soon as it is within the allowed limit and has stopped being a cached fix.
-        if (fix.accuracy <= targetAccuracy) finish(() => resolve(fix));
-      },
+      onPosition,
       (err) => {
         // Permission denial is definitive and should be shown immediately.
         // POSITION_UNAVAILABLE/TIMEOUT can be transient while Android Chrome
@@ -125,12 +127,23 @@ export function locate({
       },
       {
         enableHighAccuracy: true,
-        // A very recent browser fix is still useful; forcing maximumAge: 0
-        // can make Android Chrome wait for a brand-new GPS acquisition even
-        // when the phone already has a reliable location from another app.
-        maximumAge: 10_000,
+        // Force a fresh GNSS/GPS hardware fix instead of letting Android Chrome's
+        // Fused Location Provider return a stale +/-2000m cell-tower cache.
+        maximumAge: 0,
       },
     );
+
+    if (timeoutMs > 12_000) {
+      nudgeTimer = setTimeout(() => {
+        if (!settled && (!best || best.accuracy > maxAccuracy)) {
+          navigator.geolocation.getCurrentPosition(
+            onPosition,
+            () => {},
+            { enableHighAccuracy: true, maximumAge: 0, timeout: 20_000 },
+          );
+        }
+      }, 12_000);
+    }
 
     timer = setTimeout(() => {
       if (best && best.accuracy <= maxAccuracy) {
