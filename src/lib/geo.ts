@@ -35,27 +35,11 @@ export function detectGeolocationTampering(): boolean {
     return true;
   }
 
-  const geo = navigator.geolocation;
-  if (!geo) return false;
-
-  try {
-    // 2. Detect direct property overrides on the navigator.geolocation instance
-    const ownWatch = Object.getOwnPropertyDescriptor(geo, 'watchPosition');
-    const ownGet = Object.getOwnPropertyDescriptor(geo, 'getCurrentPosition');
-    if (ownWatch || ownGet) {
-      return true;
-    }
-
-    // 3. Verify native C++ implementation string on watchPosition & getCurrentPosition
-    const watchStr = Function.prototype.toString.call(geo.watchPosition);
-    const getStr = Function.prototype.toString.call(geo.getCurrentPosition);
-    if (!/\[native code\]/.test(watchStr) || !/\[native code\]/.test(getStr)) {
-      return true;
-    }
-  } catch {
-    return true;
-  }
-
+  // Do not inspect Function#toString or property descriptors here. Legitimate
+  // browsers, privacy tools, accessibility layers and OEM WebViews can wrap these
+  // methods. Those heuristics reject real phones without proving GPS spoofing.
+  // Keep the reliable automation signal; validate the actual fix below and enforce
+  // the attendance geofence again in the database.
   return false;
 }
 
@@ -65,22 +49,19 @@ function isSyntheticPosition(pos: GeolocationPosition): boolean {
     const { latitude, longitude, accuracy } = pos.coords;
     if (
       !Number.isFinite(latitude) ||
+      latitude < -90 ||
+      latitude > 90 ||
       !Number.isFinite(longitude) ||
+      longitude < -180 ||
+      longitude > 180 ||
       !Number.isFinite(accuracy) ||
       accuracy <= 0
     ) {
       return true;
     }
 
-    // Injected JS objects usually define latitude/longitude as own data properties on coords
-    // rather than inheriting getters from GeolocationCoordinates.prototype.
-    const ownLat = Object.getOwnPropertyDescriptor(pos.coords, 'latitude');
-    const ownLng = Object.getOwnPropertyDescriptor(pos.coords, 'longitude');
-    if (ownLat && 'value' in ownLat && ownLng && 'value' in ownLng && typeof GeolocationCoordinates !== 'undefined') {
-      if (!(pos.coords instanceof GeolocationCoordinates)) {
-        return true;
-      }
-    }
+    // Do not require a particular GeolocationCoordinates prototype or descriptor
+    // layout: those vary across browser engines and embedded Android WebViews.
   } catch {
     return true;
   }
