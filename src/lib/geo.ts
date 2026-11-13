@@ -17,7 +17,7 @@ export function distanceMeters(a: { lat: number; lng: number }, b: { lat: number
 interface LocateOptions {
   /** Keep watching until accuracy is at or below this many metres. */
   targetAccuracy?: number;
-  /** Give up after this many ms without a sufficiently accurate fix. */
+  /** Maximum total time to wait for a usable fix. */
   timeoutMs?: number;
   /** Never return a fix whose reported uncertainty exceeds this many metres. */
   maxAccuracy?: number;
@@ -72,7 +72,7 @@ function isSyntheticPosition(pos: GeolocationPosition): boolean {
  * Gets the current position. Phones often return a coarse fix first and then
  * refine it, so we watch briefly and return the most accurate reading.
  */
-export function locate({ targetAccuracy = 30, timeoutMs = 25_000, maxAccuracy = 150 }: LocateOptions = {}): Promise<GeoFix> {
+export function locate({ targetAccuracy = 30, timeoutMs = 45_000, maxAccuracy = 150 }: LocateOptions = {}): Promise<GeoFix> {
   return new Promise((resolve, reject) => {
     if (!window.isSecureContext) return reject(appError('GEO_INSECURE'));
     if (!('geolocation' in navigator)) return reject(appError('GEO_UNSUPPORTED'));
@@ -80,16 +80,22 @@ export function locate({ targetAccuracy = 30, timeoutMs = 25_000, maxAccuracy = 
 
     let best: GeoFix | null = null;
     let settled = false;
+    let watchId: number | undefined;
+    let timer: ReturnType<typeof setTimeout>;
 
     const finish = (fn: () => void) => {
       if (settled) return;
       settled = true;
-      navigator.geolocation.clearWatch(watchId);
+      if (watchId !== undefined) navigator.geolocation.clearWatch(watchId);
       clearTimeout(timer);
       fn();
     };
 
-    const watchId = navigator.geolocation.watchPosition(
+    // Do not set GeolocationPositionOptions.timeout here. On Android Chrome,
+    // the browser-level timeout can fire before the phone's location provider
+    // produces its first fix and prematurely ends a watch that could still work.
+    // The independent timer below is the single overall deadline.
+    watchId = navigator.geolocation.watchPosition(
       (pos) => {
         if (isSyntheticPosition(pos)) {
           return finish(() => reject(appError('GEO_SPOOF_DETECTED')));
@@ -99,21 +105,18 @@ export function locate({ targetAccuracy = 30, timeoutMs = 25_000, maxAccuracy = 
         if (fix.accuracy <= targetAccuracy) finish(() => resolve(fix));
       },
       (err) => {
-        // A coarse network/cell-tower fix is not safe for attendance geofencing.
-        if (best && best.accuracy <= maxAccuracy) return finish(() => resolve(best!));
-        if (best) return finish(() => reject(appError('GEO_LOW_ACCURACY', String(Math.round(best!.accuracy)))));
-        const code =
-          err.code === err.PERMISSION_DENIED
-            ? 'GEO_DENIED'
-            : err.code === err.TIMEOUT
-              ? 'GEO_TIMEOUT'
-              : 'GEO_UNAVAILABLE';
-        finish(() => reject(appError(code)));
+        // Permission denial is definitive and should be shown immediately.
+        // POSITION_UNAVAILABLE/TIMEOUT can be transient while Android Chrome
+        // initializes GPS; keep the watch alive and let the overall deadline
+        // decide whether a sufficiently accurate fix was obtained.
+        if (err.code === err.PERMISSION_DENIED) {
+          finish(() => reject(appError('GEO_DENIED')));
+        }
       },
-      { enableHighAccuracy: true, maximumAge: 0, timeout: timeoutMs },
+      { enableHighAccuracy: true, maximumAge: 0 },
     );
 
-    const timer = setTimeout(() => {
+    timer = setTimeout(() => {
       if (best && best.accuracy <= maxAccuracy) {
         finish(() => resolve(best!));
       } else if (best) {
