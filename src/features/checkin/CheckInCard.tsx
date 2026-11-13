@@ -22,6 +22,7 @@ export function CheckInCard({ session, student, checkedIn, now, onCheckedIn }: P
   const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState<AppError | null>(null);
   const [lastFix, setLastFix] = useState<{ accuracy: number } | null>(null);
+  const [liveAccuracy, setLiveAccuracy] = useState<number | null>(null);
 
   const run = async () => {
     setError(null);
@@ -36,7 +37,8 @@ export function CheckInCard({ session, student, checkedIn, now, onCheckedIn }: P
       );
 
       setPhase('locating');
-      const fix = await locate();
+      setLiveAccuracy(null);
+      const fix = await locate({ onProgress: setLiveAccuracy });
       setLastFix({ accuracy: Math.round(fix.accuracy) });
 
       setPhase('sending');
@@ -143,7 +145,12 @@ export function CheckInCard({ session, student, checkedIn, now, onCheckedIn }: P
           )}
           {phase === 'locating' && (
             <p className="fine-print center">
-              Acquiring high-accuracy GPS coordinates inside {session.venue} ({session.radius_m}m radius)…
+              Waiting for GPS inside {session.venue} ({session.radius_m}m radius)…{' '}
+              {liveAccuracy == null
+                ? 'No reading yet. Keep this page open.'
+                : liveAccuracy > 1000
+                  ? `Current reading ±${liveAccuracy}m is a cell-tower guess, not GPS. Step outside or near a window, switch on Google Location Accuracy, and wait up to 90s.`
+                  : `Current reading ±${liveAccuracy}m (needs ±250m or better). Improving…`}
             </p>
           )}
           {error && <Alert tone="error">{error.message}</Alert>}

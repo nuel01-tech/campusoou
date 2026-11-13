@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+﻿import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAction, useAsync } from '@/hooks/useAsync';
 import { getClass } from '@/services/classes';
@@ -103,7 +103,7 @@ function NewSessionForm({ klass, sessions }: Awaited<ReturnType<typeof loadShape
     setLocating(true);
     setGeoError(null);
     try {
-      setFix(await locate({ targetAccuracy: 20, timeoutMs: 15_000 }));
+      setFix(await locate({ targetAccuracy: 20, timeoutMs: 45_000 }));
     } catch (e) {
       setGeoError(toAppError(e));
     } finally {
@@ -171,8 +171,8 @@ function NewSessionForm({ klass, sessions }: Awaited<ReturnType<typeof loadShape
         title={isBackfill ? `Log & Mark Past Session (Week ${week})` : 'Start a Lecture Session'}
         subtitle={
           isBackfill
-            ? `${klass.name} · Select any omitted semester week (Week 1 – 15) to create its record and manually mark student attendance.`
-            : `${klass.name} · Stand inside the venue so your phone captures the exact lecture hall coordinates.`
+            ? `${klass.name} Â· Select any omitted semester week (Week 1 â€“ 15) to create its record and manually mark student attendance.`
+            : `${klass.name} Â· Stand inside the venue so your phone captures the exact lecture hall coordinates.`
         }
         back={{ to: `/rep/class/${klass.id}`, label: klass.name }}
       />
@@ -239,11 +239,11 @@ function NewSessionForm({ klass, sessions }: Awaited<ReturnType<typeof loadShape
         <div className="stack-xs">
           <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
             <span className="field-label">
-              Select Semester Week (Week 1 – Week 15)
-              {course.trim() ? ` · ${course.trim().toUpperCase()}` : ''}
+              Select Semester Week (Week 1 â€“ Week 15)
+              {course.trim() ? ` Â· ${course.trim().toUpperCase()}` : ''}
             </span>
             <span className="muted small">
-              Green = session already recorded · Grey = omitted / no session yet
+              Green = session already recorded Â· Grey = omitted / no session yet
             </span>
           </div>
 
@@ -271,7 +271,7 @@ function NewSessionForm({ klass, sessions }: Awaited<ReturnType<typeof loadShape
                     {heldCount > 0 ? (
                       <span className="row" style={{ gap: '0.2rem', justifyContent: 'center' }}>
                         <CheckCircle2Icon size={10} />
-                        <span>{heldCount > 1 ? `${heldCount}×` : 'Held'}</span>
+                        <span>{heldCount > 1 ? `${heldCount}Ã—` : 'Held'}</span>
                       </span>
                     ) : (
                       'Empty'
@@ -288,13 +288,13 @@ function NewSessionForm({ klass, sessions }: Awaited<ReturnType<typeof loadShape
             label="Selected Week Number"
             value={week}
             onChange={(e) => handleSelectWeek(Number(e.target.value))}
-            hint="Standard semesters have 15 weeks (Week 1 – Week 15)."
+            hint="Standard semesters have 15 weeks (Week 1 â€“ Week 15)."
           >
             {SEMESTER_WEEKS.map((w) => {
               const heldCount = weeksWithSessions.get(w) ?? 0;
               return (
                 <option key={w} value={w}>
-                  Week {w} {heldCount > 0 ? `(✓ ${heldCount} session${heldCount > 1 ? 's' : ''} recorded)` : '(No session yet — Omitted)'}
+                  Week {w} {heldCount > 0 ? `(âœ“ ${heldCount} session${heldCount > 1 ? 's' : ''} recorded)` : '(No session yet â€” Omitted)'}
                 </option>
               );
             })}
@@ -378,7 +378,7 @@ function NewSessionForm({ klass, sessions }: Awaited<ReturnType<typeof loadShape
           {isBackfill ? <ClipboardCheckIcon size={16} /> : <MapPinIcon size={16} />}
           <span>
             {isBackfill
-              ? `Create Week ${week} Record & Mark Students Manually →`
+              ? `Create Week ${week} Record & Mark Students Manually â†’`
               : `Start Live GPS Session (Week ${week})`}
           </span>
         </Button>
@@ -402,7 +402,7 @@ function LocationBox({
 }) {
   if (locating) {
     return (
-      <Alert tone="info" title="Acquiring GPS coordinates…">
+      <Alert tone="info" title="Acquiring GPS coordinatesâ€¦">
         Stand inside the venue. The session centre is set to where you are now.
       </Alert>
     );
@@ -429,7 +429,7 @@ function LocationBox({
   return (
     <Alert
       tone={rough ? 'warning' : 'success'}
-      title={`GPS Location Locked · ±${Math.round(fix.accuracy)} m accuracy`}
+      title={`GPS Location Locked Â· Â±${Math.round(fix.accuracy)} m accuracy`}
       action={
         <Button size="sm" variant="secondary" type="button" onClick={onRetry}>
           <RefreshCwIcon size={13} />
@@ -447,7 +447,7 @@ function LocationBox({
         target="_blank"
         rel="noreferrer"
       >
-        View coordinates on OpenStreetMap →
+        View coordinates on OpenStreetMap â†’
       </Link>
     </Alert>
   );

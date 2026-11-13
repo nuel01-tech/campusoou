@@ -21,6 +21,8 @@ interface LocateOptions {
   timeoutMs?: number;
   /** Never return a fix whose reported uncertainty exceeds this many metres. */
   maxAccuracy?: number;
+  /** Called on every reading so the UI can show GPS progress (metres of uncertainty). */
+  onProgress?: (accuracyM: number) => void;
 }
 
 /**
@@ -72,7 +74,12 @@ function isSyntheticPosition(pos: GeolocationPosition): boolean {
  * Gets the current position. Phones often return a coarse fix first and then
  * refine it, so we watch briefly and return the most accurate reading.
  */
-export function locate({ targetAccuracy = 50, timeoutMs = 60_000, maxAccuracy = 250 }: LocateOptions = {}): Promise<GeoFix> {
+export function locate({
+  targetAccuracy = 50,
+  timeoutMs = 90_000,
+  maxAccuracy = 250,
+  onProgress,
+}: LocateOptions = {}): Promise<GeoFix> {
   return new Promise((resolve, reject) => {
     if (!window.isSecureContext) return reject(appError('GEO_INSECURE'));
     if (!('geolocation' in navigator)) return reject(appError('GEO_UNSUPPORTED'));
@@ -102,6 +109,9 @@ export function locate({ targetAccuracy = 50, timeoutMs = 60_000, maxAccuracy = 
         }
         const fix = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
         if (!best || fix.accuracy < best.accuracy) best = fix;
+        onProgress?.(Math.round(best.accuracy));
+        // Resolve as soon as the reading is good enough for attendance (<= targetAccuracy),
+        // or as soon as it is within the allowed limit and has stopped being a cached fix.
         if (fix.accuracy <= targetAccuracy) finish(() => resolve(fix));
       },
       (err) => {
