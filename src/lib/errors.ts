@@ -90,8 +90,8 @@ const MESSAGES: Record<string, string | MessageFor> = {
     'Incorrect 4-digit Hall Security PIN. Check the code announced by your Class Rep inside the lecture hall and try again.',
   OUT_OF_RANGE: (d) =>
     d
-      ? `You are about ${d} m from the venue, which is outside the allowed area. Move closer and try again.`
-      : 'You are outside the allowed area for this session. Move closer and try again.',
+      ? `You are about ${d} m from the saved session location, which is outside the allowed area. Move closer and try again. If you are already at the lecture venue, ask your Class Rep to verify the session GPS location.`
+      : 'You are outside the allowed area for this session. Move closer and try again. If you are already at the lecture venue, ask your Class Rep to verify the session GPS location.',
 
   // Geolocation (browser)
   GEO_UNSUPPORTED: 'This browser cannot share location. Open the link in Chrome or Safari.',
