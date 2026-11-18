@@ -1551,24 +1551,10 @@ begin
 
   v_distance := distance_m(v_session.lat, v_session.lng, p_lat, p_lng);
 
-  -- Anti-Spoof Check 1: Block exact-coordinate injection (0.00m distance from Class Rep's phone)
-  if not coalesce(v_student.is_rep, false) and v_distance < 0.25 then
-    raise exception 'GEO_SPOOF_DETECTED';
-  end if;
-
-  -- Anti-Spoof Check 2: Block cloned/shared GPS coordinates across students in the same session
-  if not coalesce(v_student.is_rep, false) and exists (
-    select 1
-      from public.attendance a
-     where a.session_id = v_session.id
-       and a.student_id <> v_student.id
-       and a.manual = false
-       and a.lat is not null
-       and a.lng is not null
-       and public.distance_m(a.lat, a.lng, p_lat, p_lng) < 0.15
-  ) then
-    raise exception 'GEO_SPOOF_DETECTED';
-  end if;
+  -- Coordinate proximity is not proof of spoofing. Genuine devices can
+  -- report identical or near-identical GPS fixes, especially indoors.
+  -- Keep validation based on valid coordinates, reported accuracy, the
+  -- server-side geofence, registered-device binding and one-time passkey proof.
 
   if v_distance - least(p_accuracy, 25) > v_session.radius_m then
     raise exception 'OUT_OF_RANGE' using detail = round(v_distance)::text;
