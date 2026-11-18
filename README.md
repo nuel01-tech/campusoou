@@ -24,6 +24,7 @@ A class attendance web app. The **Super Admin** creates **Class Rep** accounts, 
 2. **Run the database migration:**
    - Open **SQL Editor** in your Supabase dashboard.
    - Paste the contents of [`supabase/migrations/0001_init.sql`](./supabase/migrations/0001_init.sql) and click **Run**.
+   - For an existing project upgrading from an earlier release, also run [`supabase/migrations/0004_gps_false_positive_fix.sql`](./supabase/migrations/0004_gps_false_positive_fix.sql) after the existing migrations.
 3. **Enable Anonymous Sign-Ins:**
    - Go to **Authentication → Providers → Anonymous Sign-Ins** and toggle it **On**.
 4. **Configure local environment:**
