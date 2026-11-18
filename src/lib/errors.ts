@@ -81,7 +81,7 @@ const MESSAGES: Record<string, string | MessageFor> = {
     'Your location is not precise enough. Turn on precise location, step near a window or outside, and try again.',
   INVALID_LOCATION: 'Could not read a valid location from your phone. Try again.',
   GEO_SPOOF_DETECTED:
-    'Security Alert: Location spoofing, mock GPS, VPN/proxy injection, or tampered browser geolocation was detected and blocked. Disable any mock location / VPN / spoofing extensions and use your phone’s real hardware GPS.',
+    'Your location could not be validated. Make sure device location is enabled and retry using your registered phone. If this keeps happening, contact your Class Rep so the session location and device verification can be checked.',
   WEBAUTHN_TAMPERED:
     'Security Alert: Cryptographic Passkey signature verification failed or was replayed. Check in directly from your registered phone using your Fingerprint, Face ID, or screen lock.',
   SECURITY_CODE_REQUIRED:
